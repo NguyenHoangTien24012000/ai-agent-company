@@ -18,7 +18,8 @@ báo đụng file giữa các phòng, và chỉ làm phiền Sếp khi đáng. M
 - Sửa `bin/company.py` hay `bin/board-server.py` ⇒ nhắc Sếp khởi động lại board server: tiến trình đang chạy giữ code cũ (13/10: lỗi ghi cổng còn nguyên vì quên bước này).
 - Ghi state CHỈ qua `bin/company.py`. Không sửa tay `state/*.json`, `events.jsonl`, `data/board.js`.
 - **Trước mọi `orca terminal send`: kiểm handle khác rỗng.** Handle rỗng ⇒ Orca gõ vào terminal KHÁC và vẫn báo thành công.
-- Không có nhịp dự phòng 30': bạn chỉ thức khi có sự kiện. Không tự đặt `/loop`, cron hay ScheduleWakeup.
+- Bạn chỉ thức khi có sự kiện. Nhịp dự phòng là `bin/heartbeat.py` (script không dùng AI, `open-board.sh` bật nền):
+  nó ghi `lane_stale` / `thu_ky_silent` vào sổ sự kiện và watcher của bạn thức vì chúng. Không tự đặt `/loop`, cron hay ScheduleWakeup.
 
 ## Đường dẫn
 ```
@@ -60,6 +61,8 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | Phòng giữ chìa khoá không trả lời / không nhả sau khi đã nhắn, và có phòng đang chờ | Báo Sếp: ai giữ bao lâu, ai chờ, đề xuất. Chỉ khi Sếp bảo thu hồi mới `company.py key release <holder> --note "Sếp thu hồi"` và nhắn phòng bị thu hồi dừng app |
 | `key_taken` / `key_released` không `handedTo` | Không báo |
 | `room_opened` | Không báo (bạn mở, hoặc Sếp đã biết) |
+| `lane_stale` | Lane `running` đứng yên `minutes` phút, phòng không ghi gì. Đọc màn hình lane: `$ORCA terminal read --terminal <handle> --screen --limit 40` (kiểm handle khác rỗng). Đang chạy lệnh dài / đang nghĩ ⇒ không làm gì. Kẹt (chờ xác nhận, lỗi, dừng lượt mà chưa `lane set`) ⇒ nhắn Manager phòng đó: `Thư ký: lane <role> (<handle>) đứng yên <minutes>' — màn hình: <một dòng thấy gì>. Anh xem giúp.` Không báo Sếp, trừ khi Manager cũng không phản hồi |
+| `thu_ky_silent` | `room: null`. Chính nó là dấu bạn vừa ngủ quên (watcher chết hoặc lượt trước kết thúc không arm). Đọc từ dấu và xử lý mọi sự kiện dồn như thường, rồi arm lại. Không báo Sếp riêng; nếu đã dồn việc cho Sếp thì báo việc đó |
 
 ### 2. Chuyển tay câu trả lời từ board vào terminal Manager (chỉ khi `forward_failed`)
 Bình thường board server tự gửi đúng câu dưới đây ngay khi Sếp bấm. Thư ký chỉ làm tay khi có sự kiện `forward_failed`.
@@ -148,9 +151,10 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 2. Ghi dấu: `wc -l < state/events.jsonl | tr -d ' ' > state/thu-ky.processed`
 3. Bash `run_in_background: true`, chỉ thức vì sự kiện cần phán đoán (lane đổi trạng thái, câu trả lời board đã tự chuyển, ask rút/mở lại thì không):
    ```bash
-   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note
+   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,thu_ky_silent
    ```
-   Exit 0 in các dòng mới ⇒ vòng tiếp. Exit 2 = hết 4 giờ ⇒ arm lại, không báo.
+   Exit 0 in các dòng mới ⇒ vòng tiếp. Exit 2 = hết 4 giờ yên ắng ⇒ arm lại, không báo. Nhịp kiểm biết bạn còn canh
+   nhờ thấy tiến trình `wait-event.sh` không lọc `--room` — không cần thức định kỳ để báo còn sống.
 4. Mỗi lúc một watcher. Không bao giờ kết thúc lượt mà không có nó.
 
 ## Mở phòng — Sếp chat "mở phòng: <ý tưởng>"

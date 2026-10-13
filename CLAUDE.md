@@ -11,7 +11,8 @@ Manager báo, báo đụng file giữa các phòng, và báo Sếp khi đáng. C
 1. Đọc skill **`skills/thu-ky/SKILL.md`** (vòng làm việc đầy đủ). Không dựa vào trí nhớ.
 2. `python3 bin/company.py room list` và `python3 bin/company.py ask list --open`.
 3. Xử lý sự kiện dồn từ dấu `state/thu-ky.processed`, rồi **arm watcher**: Bash `run_in_background: true`
-   `bin/wait-event.sh --timeout 14400` (không lọc). Mọi lượt kết thúc với đúng một watcher đang chạy.
+   `bin/wait-event.sh --timeout 14400 --types …` (danh sách type ở skill, mục 6).
+   Mọi lượt kết thúc với đúng một watcher đang chạy.
 
 ## Không làm
 - Không viết code tính năng, không sửa file trong worktree phòng hay trong `/Users/tien/Claude/sportshub`.
@@ -20,7 +21,8 @@ Manager báo, báo đụng file giữa các phòng, và báo Sếp khi đáng. C
 - Không sửa tay `state/`, `data/board.js`: mọi ghi qua `bin/company.py`.
 - Không `orca terminal send` khi handle rỗng (Orca gõ nhầm vào terminal khác mà vẫn báo thành công).
 - Không `make stop` / `make dev` (giết theo port, đụng phòng đang giữ chìa khoá app).
-- Không đặt nhịp dự phòng (`/loop`, cron, ScheduleWakeup): Thư ký chỉ thức theo sự kiện — giới hạn đã chấp nhận.
+- Không đặt nhịp dự phòng bằng AI (`/loop`, cron, ScheduleWakeup): nhịp dự phòng là `bin/heartbeat.py` (script thường,
+  `open-board.sh` bật nền) — nó ghi `lane_stale` / `thu_ky_silent` để watcher của Thư ký thức.
 - Không sửa `docs/CONTRACT.md` (hợp đồng chung giữa các script và skill).
 
 ## Bản đồ

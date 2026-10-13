@@ -34,8 +34,13 @@ def effective_options(ask):
     if ask['kind'] == 'thaotac':
         return [{'key': 'done', 'label': 'Đã làm xong'}]
     return [{'key': OPEN_ANSWER, 'label': 'Gửi câu trả lời'}]
-BUG_TRANSITIONS = {'open': {'fixing'}, 'fixing': {'retest'},
-                   'retest': {'fixing', 'closed'}, 'closed': set()}
+# deferred = dời sang backlog: lỗi có thật nhưng cố ý không sửa trong phòng này (W7). Chỉ từ open/fixing,
+# bắt buộc ghi chú trỏ tới dòng backlog hay commit; không còn tính là "chưa đóng", không lên "Việc của anh".
+BUG_TRANSITIONS = {'open': {'fixing', 'deferred'}, 'fixing': {'retest', 'deferred'},
+                   'retest': {'fixing', 'closed'}, 'closed': set(), 'deferred': set()}
+BUG_SETTLED = ('closed', 'deferred')
+# Cổng 3 (giao diện mẫu) chặn mở lane dev-web khi phòng có Designer: code web trước khi Sếp duyệt mẫu là làm hai lần.
+UI_GATE = '3'
 
 
 class UserError(ValueError):
@@ -152,7 +157,7 @@ class Company:
         queue = []
         for room in rooms:
             queue.extend(dict(ask, options=effective_options(ask)) for ask in room['asks'] if ask['status'] == 'open')
-            queue.extend(bug for bug in room['bugs'] if bug['needsBoss'] and bug['status'] != 'closed')
+            queue.extend(bug for bug in room['bugs'] if bug['needsBoss'] and bug['status'] not in BUG_SETTLED)
         queue.sort(key=lambda item: (item['createdAt'], item['id']))
         events_path = self.state / 'events.jsonl'
         events = []
@@ -176,13 +181,25 @@ class Company:
         if company is not None or not (self.state / 'company.json').exists():
             atomic_write(self.state / 'company.json',
                          json.dumps(company if company is not None else self.company(), ensure_ascii=False) + '\n')
-        event = {'ts': stamp, 'type': event_type, 'room': room['key'], **(fields or {})}
+        self._append_event(stamp, event_type, room['key'], fields)
+
+    def _append_event(self, stamp, event_type, room_key, fields):
+        event = {'ts': stamp, 'type': event_type, 'room': room_key, **(fields or {})}
         with (self.state / 'events.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(event, ensure_ascii=False) + '\n')
             stream.flush()
             os.fsync(stream.fileno())
         atomic_write(self.root / 'data' / 'board.js',
                      'window.BOARD = ' + json.dumps(self._snapshot(), ensure_ascii=False) + ';\n')
+        return event
+
+    def record(self, event_type, fields=None, room_key=None):
+        """Ghi một sự kiện mà KHÔNG đổi state phòng (nhịp kiểm dùng). room_key=None ⇒ sự kiện cấp công ty,
+        không gắn phòng nào; wait-event --room KEY sẽ không khớp nó, Thư ký (không lọc phòng) thì có."""
+        with self.lock():
+            if room_key is not None:
+                self.room(room_key)
+            return self._append_event(now(), event_type, room_key, fields)
 
     def find_item(self, item_id, collection, marker):
         if not isinstance(item_id, str):
@@ -331,6 +348,12 @@ class Company:
                 if action == 'add':
                     if lane is not None:
                         raise UserError('Handle lane đã tồn tại: ' + a.handle)
+                    gate_bypassed = (a.role == 'dev-web' and 'designer' in room['roles']
+                                     and not room['gates'].get(UI_GATE))
+                    if gate_bypassed and not a.force_gate:
+                        raise UserError('Phòng ' + room['key'] + ' có vai designer mà cổng 3 (giao diện mẫu) chưa duyệt '
+                                        '— chưa được mở lane dev-web. Chờ Sếp duyệt cổng 3; Sếp đã đồng ý ngoại lệ '
+                                        'thì chạy lại với --force-gate.')
                     lane = {'role': a.role, 'handle': a.handle, 'model': a.model,
                             'status': 'running', 'note': '', 'updatedAt': now()}
                     room['lanes'].append(lane)
@@ -341,6 +364,10 @@ class Company:
                     if a.note is not None:
                         lane['note'] = a.note
                 event_type, fields, result = 'lane_changed', dict(lane), lane
+                if action == 'add' and gate_bypassed:
+                    # Để lại dấu trong sổ sự kiện: ai đọc lại cũng thấy lane này mở trước cổng 3.
+                    fields.update(note='Mở lane dev-web trước cổng 3 (--force-gate): Sếp đồng ý ngoại lệ.',
+                                  forceGate=True)
             elif command == 'ask':
                 if a.kind == 'duyet' and a.gate is None:
                     raise UserError('Câu hỏi duyệt cần --gate 1–6.')
@@ -382,6 +409,8 @@ class Company:
                 else:
                     if a.status == 'closed' and a.by != 'qa':
                         raise UserError('Chỉ --by qa được đóng bug.')
+                    if a.status == 'deferred' and a.status != bug['status'] and not (a.note or '').strip():
+                        raise UserError('Dời lỗi sang backlog cần --note trỏ tới dòng backlog hoặc commit ghi nó.')
                     if a.status and a.status != bug['status'] and a.status not in BUG_TRANSITIONS[bug['status']]:
                         raise UserError('Chuyển trạng thái bug không hợp lệ: ' + bug['status'] + ' → ' + a.status)
                     if a.status:
@@ -479,6 +508,8 @@ def parser():
         sub.add_argument('--handle', required=True, type=nonempty)
     add.add_argument('--role', required=True, type=nonempty)
     add.add_argument('--model', default=None, type=nonempty)
+    add.add_argument('--force-gate', action='store_true',
+                     help='Mở lane dev-web dù cổng 3 chưa duyệt — chỉ khi Sếp đã đồng ý ngoại lệ.')
     setting.add_argument('--status', required=True, choices=('running', 'waiting', 'done', 'closed'))
     setting.add_argument('--note')
     add, resolve, reopen, cancel, listing = group('ask', ['add', 'resolve', 'reopen', 'cancel', 'list'])

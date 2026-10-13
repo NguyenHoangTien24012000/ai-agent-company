@@ -106,15 +106,26 @@ Mức suy nghĩ (`--effort` của Claude, `model_reasoning_effort` của Codex) 
 | Techlead, Designer, Review, dev lượt đầu của một lát | `high` |
 | QA chạy ca test theo kế hoạch đã duyệt, dev sửa lỗi nhỏ / sửa theo review, Designer sửa lab theo ghi chú | `medium` |
 
-Dispatch MỘT câu trỏ vào brief:
+Dispatch MỘT câu trỏ vào brief. Model theo vai; mức suy nghĩ theo bảng trên — lệnh mẫu dưới là lượt đầu (`high`),
+lượt `medium` thì đổi đúng số đó:
+
+| Vai | Agent | Model |
+|---|---|---|
+| dev-server | codex | `-m gpt-6-astra` |
+| dev-web | codex | `-m gpt-6.1-sol` |
+| techlead, designer, review | Claude | `--model claude-opus-5-5` |
+| qa | Claude | `--model claude-sonnet-5-5` |
 
 ```bash
-# codex (dev-server)
-orca terminal send --terminal $H --enter --text "codex -s workspace-write -a never --strict-config -m gpt-6-astra -c model_reasoning_effort=high -c sandbox_workspace_write.network_access=true \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
-# Claude (designer/techlead/review: opus · dev-web/qa: sonnet) — designer tự mở lane codex image_gen theo thiet-ke-man
-orca terminal send --terminal $H --enter --text "claude --model opus --effort high --permission-mode bypassPermissions \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
+# codex (dev-server; dev-web đổi -m gpt-6.1-sol). --add-dir mở thêm $CO cho sandbox ghi được, để lane tự gọi
+# `company.py lane set`/`bug set` — ngoài worktree và $CO, sandbox workspace-write vẫn chặn ghi.
+orca terminal send --terminal $H --enter --text "codex -s workspace-write -a never --strict-config -m gpt-6-astra -c model_reasoning_effort=high -c sandbox_workspace_write.network_access=true --add-dir /Users/tien/sportshub-company \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
+# Claude (techlead/designer/review: opus · qa: sonnet) — designer tự mở lane codex image_gen theo thiet-ke-man
+orca terminal send --terminal $H --enter --text "claude --model claude-opus-5-5 --effort high --permission-mode bypassPermissions \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
+orca terminal send --terminal $H --enter --text "claude --model claude-sonnet-5-5 --effort high --permission-mode bypassPermissions \"Lane qa phòng $KEY. Read $R/briefs/qa.md and follow it.\""
 orca terminal read --terminal $H --screen --limit 20      # xác nhận agent đã nhận việc
 $C lane add $KEY --role <vai> --handle $H --model codex|opus|sonnet
+# dev-web ở phòng có Designer: CLI từ chối khi cổng 3 chưa duyệt. Sếp cho ngoại lệ ⇒ thêm --force-gate (được ghi lại).
 ```
 
 Arm watcher **CÙNG lượt** dispatch (Bash `run_in_background`):
@@ -125,7 +136,8 @@ Arm watcher **CÙNG lượt** dispatch (Bash `run_in_background`):
 
 Giao lượt tiếp cho CÙNG lane (feedback, sửa lỗi, test lại) ⇒ trước đó `mv $R/reports/<vai>.md $R/reports/<vai>-<n>.md`,
 không thì watcher bắt nhầm `LANE-DONE` của lượt cũ. Lượt mới gửi bằng `orca terminal send` một câu trỏ vào brief/ghi chú mới.
-Lane codex chạy sandbox: không ghi được `$CO/state` ⇒ Manager tự `$C lane set` thay nó.
+Lane codex mở bằng `--add-dir /Users/tien/sportshub-company` nên tự ghi được `$C lane set`/`bug set`; Manager vẫn
+`$C room show $KEY` kiểm lại sau mỗi lượt — lane quên ghi (hay lệnh mở thiếu `--add-dir`) thì Manager tự `$C lane set` thay.
 Lane xong ⇒ `$C lane set $KEY --handle $H --status done --note "<1 dòng>"`; hết việc ⇒ `orca terminal close --terminal $H --tab`
 rồi `--status closed`.
 
@@ -169,6 +181,7 @@ QA `bug add` ⇒ watcher báo `bug_opened` ⇒ Manager đọc thẻ, giao dev đ
 $C bug set <ID> --status fixing --assignee dev-server|dev-web --note "giao lane …" --by manager
 orca terminal send --terminal <h-dev> --enter --text "Sửa lỗi <ID>: <tóm tắt>. Xem $C room show $KEY. Xong thì báo cáo vào $R/reports/<vai>.md."
 $C bug set <ID> --status retest --note "<commit/ file đã sửa>" --by manager     # dev xong (dev codex không gọi được CLI)
+$C bug set <ID> --status deferred --note "<dòng backlog / commit ghi backlog>" --by manager   # dời backlog (lỗi có sẵn trên main, ngoài phạm vi lát)
 ```
 
 Rồi nhắn QA test lại đúng ca. **Chỉ QA đóng** (`--status closed --by qa`). Lỗi cần quyết hành vi ⇒ QA dùng
@@ -176,23 +189,25 @@ Rồi nhắn QA test lại đúng ca. **Chỉ QA đóng** (`--status closed --by
 
 ## 9. Chìa khoá app
 
-Chạy app thật (DB 5432, server 8080, web 5173) chỉ khi giữ chìa khoá:
+Chạy app thật (server 8080, web 5173) chỉ khi giữ chìa khoá — trên DB RIÊNG của phòng, không đụng DB `sportshub` của Sếp:
 
 ```bash
 $C key request $KEY --reason "<vì sao>"   # trống ⇒ nhận luôn; phòng khác giữ ⇒ xếp hàng, làm việc khác
-make dev                 # CHỈ khi `key status` cho thấy phòng mình giữ
-make stop && $C key release $KEY     # ngay khi xong lượt test — còn phòng chờ thì chìa khoá tự chuyển sang họ
+make qa-up KEY=$k        # CHỈ khi `key status` cho thấy phòng mình giữ: tạo DB sportshub_<k>, chạy server + web
+make qa-down KEY=$k && $C key release $KEY   # ngay khi xong lượt test — còn phòng chờ thì chìa khoá tự chuyển sang họ
 ```
 
+⛔ KHÔNG BAO GIỜ `make dev` / `make stop` trong worktree phòng: `make dev` đụng tên container DB, `make stop` giết theo
+cổng (cả lab 5174 của phòng khác) và tắt container DB dùng chung. `qa-down` chỉ tắt đúng PID phòng mình bật.
+
 Thư ký điều phối chìa khoá giữa các phòng, nhắn vào terminal này:
-- *"phòng X cần chìa khoá…"* ⇒ không ai trong phòng còn chạy app ⇒ `make stop && $C key release $KEY` ngay; còn cần
-  (QA đang dở lượt) ⇒ trả lời Thư ký ước lượng bao lâu, xong thì nhả. Không ôm chìa khoá khi không chạy app.
+- *"phòng X cần chìa khoá…"* ⇒ không ai trong phòng còn chạy app ⇒ `make qa-down KEY=$k && $C key release $KEY` ngay;
+  còn cần (QA đang dở lượt) ⇒ trả lời Thư ký ước lượng bao lâu, xong thì nhả. Không ôm chìa khoá khi không chạy app.
 - *"phòng bạn đã có chìa khoá"* ⇒ giao lượt test đang chờ cho QA.
 
-Lượt test của QA: QA tự `key request`/`release` theo `phong-qa`; ai nhận thì người đó nhả.
-KHÔNG BAO GIỜ `make stop` khi không giữ chìa khoá: nó giết theo cổng, kể cả app của phòng khác.
-Thiết kế, `make lab` (5174), test Testcontainers không cần chìa khoá — nhưng `make stop` giết cả 5174, tức lab của
-phòng khác; hai phòng cùng `make lab` cũng đụng cổng. Chạy lab thì báo trong `$C note $KEY "đang chạy lab 5174"`.
+Lượt test của QA: QA tự `key request`/`qa-up`/`qa-down`/`release` theo `phong-qa`; ai nhận thì người đó nhả.
+Thiết kế, lab, test Testcontainers không cần chìa khoá. Lab chạy cổng riêng của phòng và báo
+`$C note $KEY "đang chạy lab <cổng>"`; hai phòng không dùng chung một cổng lab.
 
 ## 10. Review — cổng 5
 
@@ -219,7 +234,7 @@ Ask cổng 6 kèm số test và commit list (`git log --oneline main..HEAD`). Ch
 git -C /Users/tien/Claude/sportshub status --porcelain      # có thay đổi tracked ở repo gốc ⇒ DỪNG, hỏi Sếp
 git -C /Users/tien/Claude/sportshub merge --ff-only phong/$k
 git -C /Users/tien/Claude/sportshub push
-docker exec sportshub-db psql -U sportshub -d postgres -c "DROP DATABASE IF EXISTS sportshub_${k//-/_}"   # DB QA riêng của phòng
+make -C /Users/tien/Claude/sportshub qa-drop KEY=$k        # xoá DB QA riêng sportshub_<key> của phòng (Makefile của main đã có qa-drop)
 $C room done $KEY                     # in lệnh dọn — đóng lane trước, lệnh xoá worktree chạy CUỐI (nó đóng luôn terminal này)
 ```
 

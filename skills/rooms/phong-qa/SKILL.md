@@ -32,13 +32,14 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
    ```bash
    $C key status                       # phòng mình giữ ⇒ đi tiếp
    $C key request $KEY --reason "QA"   # phòng khác giữ ⇒ đã xếp hàng: lane set waiting, báo cáo, DỪNG (Thư ký báo Manager khi tới lượt)
-   # DB riêng của phòng, trong container sportshub-db ĐANG chạy (không dựng container mới):
-   DB=sportshub_${k//-/_}; P="docker exec sportshub-db psql -U sportshub -d postgres"
-   $P -tAc "SELECT 1 FROM pg_database WHERE datname='$DB'" | grep -q 1 || $P -c "CREATE DATABASE $DB"
-   export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/$DB   # Flyway tự chạy V1→Vn trên DB này
-   mkdir -p $R/qa; make server > $R/qa/server.log 2>&1 &   # chạy nền trong worktree phòng; mã OTP đọc ở log này
-   make web > $R/qa/web.log 2>&1 &                         # chờ 8080 và 5173 lên
+   make qa-up KEY=$k                   # gốc worktree phòng; Bash timeout ≥ 300000 ms (lần đầu còn biên dịch)
+   DB=sportshub_${k//-/_}              # tên DB riêng của phòng — dùng cho dev-token.py ở bước 3
    ```
+   `qa-up` tạo DB riêng `$DB` trong container `sportshub-db` ĐANG chạy (Flyway tự chạy V1→Vn), từ chối nếu cổng
+   8080/5173 đã có tiến trình nghe (in PID + thư mục chạy — rất có thể là phòng khác: báo Manager, đừng tắt hộ),
+   rồi chạy nền server + web, chờ hai cổng lên (quá 180 giây ⇒ thoát mã 1, app có thể vẫn đang lên — đọc log).
+   Cổng bận mà thư mục chạy in ra nằm trong worktree của mình ⇒ là app của mình từ lần trước: `make qa-down KEY=$k`
+   rồi `qa-up` lại. Log ở `$R/qa/server.log` (mã OTP đọc ở đây), `$R/qa/web.log`.
    ⛔ KHÔNG `make dev` trong worktree (nó gọi `make db` → `docker compose up` của worktree) và KHÔNG BAO GIỜ
    `make stop` (giết theo cổng mọi app, kể cả phòng khác, rồi tắt luôn container DB chung). Không đụng docker.
 2. **Dựng dữ liệu bằng gọi API** (curl tới `http://localhost:8080/api/v1/…`), không bấm tay. Đăng ký ba bước theo
@@ -46,10 +47,10 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
    phút) ghi ra log server khi chưa cấu hình gửi thư → đổi lấy vé → đăng ký → đăng nhập. Lưu script dựng vào
    `$R/qa/seed.sh` để chạy lại được; tài khoản đặt tên người Việt có dấu.
 3. **Chạy bằng plugin Playwright** (công cụ `browser_*` của plugin `playwright`): đặt cỡ khung, đăng nhập từng tài
-   khoản rồi tải lại trang (khỏi bấm form đăng nhập mỗi lần đổi tài khoản), đi từng ca. ⚠️ `scripts/dev-token.py`
-   hiện chỉ đọc DB `sportshub`, không thấy tài khoản trong `$DB` của phòng (sắp có `--db`; có rồi thì dùng
-   `dev-token.py <email> --db $DB --js`). Trước đó: `seed.sh` lưu thẻ trả về từ `POST /api/v1/auth/login` của từng
-   tài khoản, rồi `browser_evaluate` câu `() => { localStorage.setItem('sportshub.token', '<thẻ>'); return 'ok' }`.
+   khoản rồi tải lại trang (khỏi bấm form đăng nhập mỗi lần đổi tài khoản), đi từng ca. Đăng nhập:
+   `python3 scripts/dev-token.py <email> --db $DB --js` → dán câu in ra vào `browser_evaluate` → tải lại trang
+   (`python3 scripts/dev-token.py --list --db $DB` xem tài khoản của phòng). Thiếu `--db` là script đọc DB dev
+   `sportshub`, không thấy tài khoản của phòng.
    Chụp ảnh mỗi ❌ vào `$R/qa/shots/<mã-ca>-<cỡ>.png`,
    đọc console (lỗi đỏ là lỗi). Mạng/console cũng soi bằng plugin này (`browser_network_requests`, `browser_console_messages`) — không dùng
    Claude in Chrome hay `chrome-devtools` (luật W13). Không thêm `@playwright/test` vào repo (đã vào backlog).
@@ -61,9 +62,7 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
    Lỗi mà "đúng" hay "sai" còn tuỳ cách hiểu luật ⇒ thêm `--needs-boss`, ghi rõ hai cách hiểu. Không tự quyết.
 5. Hết lượt: tắt ĐÚNG app của worktree mình rồi trả chìa khoá (chỉ khi mình đang giữ), viết báo cáo HTML, `LANE-DONE qa`:
    ```bash
-   for port in 8080 5173; do for pid in $(lsof -ti tcp:$port -sTCP:LISTEN); do
-     lsof -a -p $pid -d cwd -Fn | grep -q "^n$PWD/" && kill $pid    # chỉ tiến trình chạy từ worktree này
-   done; done
+   make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này
    $C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
    ```
 

@@ -311,6 +311,60 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual(len(self.board()['events']), 21)
 
 
+    def test_dev_web_lane_waits_for_gate_three_when_room_has_designer(self):
+        # Code web trước khi Sếp duyệt giao diện mẫu là làm hai lần: phòng có designer thì chặn tới cổng 3.
+        before = self.events()
+        result = self.run_cli('lane', 'add', 'ATTEND', '--role', 'dev-web', '--handle', 'term_web', code=2)
+        self.assertIn('cổng 3', result.stderr)
+        self.assertIn('--force-gate', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(before, self.events())
+        self.run_cli('lane', 'add', 'ATTEND', '--role', 'dev-server', '--handle', 'term_server')   # vai khác không chặn
+        ask_id = self.run_cli('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '3', '--title', 'Mẫu').stdout.strip()
+        self.run_cli('ask', 'resolve', ask_id, '--choice', 'ok')
+        lane = self.data('lane', 'add', 'ATTEND', '--role', 'dev-web', '--handle', 'term_web')
+        self.assertEqual(lane['status'], 'running')
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['note']), ('lane_changed', ''))
+        self.assertNotIn('forceGate', event)
+
+    def test_dev_web_lane_without_designer_is_not_gated(self):
+        self.run_cli('room', 'set', 'ATTEND', '--roles', 'techlead,dev-server,dev-web,qa,review')
+        self.run_cli('lane', 'add', 'ATTEND', '--role', 'dev-web', '--handle', 'term_web')
+        self.assertNotIn('forceGate', self.events()[-1])
+
+    def test_force_gate_opens_dev_web_lane_and_leaves_a_note(self):
+        lane = self.data('lane', 'add', 'ATTEND', '--role', 'dev-web', '--handle', 'term_web', '--force-gate')
+        self.assertEqual(lane['role'], 'dev-web')
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['handle'], event['forceGate']), ('lane_changed', 'term_web', True))
+        self.assertIn('cổng 3', event['note'])
+        self.assertIn('--force-gate', event['note'])
+
+    def test_bug_deferred_to_backlog(self):
+        def bug(title, *flags):
+            return self.data('bug', 'add', 'ATTEND', '--title', title, '--area', 'web', *flags, '--by', 'qa')['id']
+        first, second, third = bug('Từ open', '--needs-boss'), bug('Từ fixing', '--needs-boss'), bug('Từ retest')
+        self.assertEqual(len(self.board()['myQueue']), 2)
+        before = self.events()
+        for note in ([], ['--note', '  ']):
+            with self.subTest(note=note):
+                result = self.run_cli('bug', 'set', first, '--status', 'deferred', *note, '--by', 'manager', code=2)
+                self.assertIn('backlog', result.stderr)
+        self.assertEqual(before, self.events())
+        deferred = self.data('bug', 'set', first, '--status', 'deferred', '--note', 'backlog: dòng "Lỗi màu nền"',
+                             '--by', 'manager')
+        self.assertEqual(deferred['history'][-1]['note'], 'backlog: dòng "Lỗi màu nền"')
+        self.assertEqual(self.events()[-1]['status'], 'deferred')
+        self.run_cli('bug', 'set', second, '--status', 'fixing', '--by', 'manager')
+        self.run_cli('bug', 'set', second, '--status', 'deferred', '--note', 'commit abc1234', '--by', 'manager')
+        self.assertEqual(self.board()['myQueue'], [])            # needsBoss mà dời backlog thì thôi hỏi Sếp
+        for status in ('fixing', 'retest'):
+            self.run_cli('bug', 'set', third, '--status', status, '--by', 'dev-web')
+        self.run_cli('bug', 'set', third, '--status', 'deferred', '--note', 'x', '--by', 'manager', code=2)
+        for status in ('open', 'fixing', 'retest', 'closed'):
+            self.run_cli('bug', 'set', first, '--status', status, '--by', 'qa', code=2)   # dời rồi là hết vòng
+
     def company_state(self):
         return json.loads((self.root / 'state/company.json').read_text())
 
@@ -347,6 +401,137 @@ class CompanyTests(unittest.TestCase):
         state = self.company_state()
         self.assertEqual((state['appKey']['room'], state['keyQueue']), ('STATS', []))
         self.assertEqual(self.events()[-1]['keyHandedTo'], 'STATS')
+
+
+HEARTBEAT = REPO / 'bin' / 'heartbeat.py'
+
+
+class HeartbeatTests(unittest.TestCase):
+    """Nhịp kiểm chạy bằng giờ giả (--now), không sleep."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.env = dict(os.environ, SPORTSHUB_CO=str(self.root), PYTHONDONTWRITEBYTECODE='1')
+        # Mặc định có watcher Thư ký đang chạy: test không phụ thuộc tiến trình thật trên máy.
+        self.ps = self.root / 'ps.txt'
+        self.ps.write_text('/bin/bash bin/wait-event.sh --timeout 14400\n')
+        self.env['HEARTBEAT_PS_FILE'] = str(self.ps)
+        self.cli('room', 'new', 'ATTEND', '--title', 'Có mặt')
+        self.cli('lane', 'add', 'ATTEND', '--role', 'qa', '--handle', 'term_qa')
+        self.start = datetime.now(timezone(timedelta(hours=7)))
+
+    def cli(self, *args):
+        result = subprocess.run([sys.executable, str(CLI), *args], env=self.env, text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result
+
+    def beat(self, minutes, *args, code=0):
+        when = (self.start + timedelta(minutes=minutes)).isoformat()
+        result = subprocess.run([sys.executable, str(HEARTBEAT), '--once', '--now', when, *args], env=self.env,
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+        return result
+
+    def events(self, *types):
+        lines = (self.root / 'state/events.jsonl').read_text().splitlines()
+        return [e for e in map(json.loads, lines) if not types or e['type'] in types]
+
+    def board(self):
+        text = (self.root / 'data/board.js').read_text()
+        return json.loads(text.removeprefix('window.BOARD = ').strip().removesuffix(';'))
+
+    def age_lane(self, minutes):
+        # Giả lane đứng yên từ lâu mà sổ sự kiện vẫn mới (Manager vừa ghi gì đó).
+        path = self.root / 'state/rooms/ATTEND.json'
+        room = json.loads(path.read_text())
+        room['lanes'][0]['updatedAt'] = (self.start - timedelta(minutes=minutes)).isoformat()
+        path.write_text(json.dumps(room))
+
+    def test_quiet_room_with_stale_running_lane_is_reported_once_per_threshold(self):
+        self.beat(30)
+        self.assertEqual(self.events('lane_stale'), [])                    # chưa tới ngưỡng 45'
+        room_before = (self.root / 'state/rooms/ATTEND.json').read_text()
+        self.beat(50)
+        stale = self.events('lane_stale')
+        self.assertEqual(len(stale), 1)
+        self.assertEqual({k: stale[0][k] for k in ('room', 'handle', 'role', 'minutes')},
+                         {'room': 'ATTEND', 'handle': 'term_qa', 'role': 'qa', 'minutes': 50})
+        self.assertEqual(room_before, (self.root / 'state/rooms/ATTEND.json').read_text())   # không đụng state phòng
+        self.assertEqual(self.board()['events'][0]['type'], 'lane_stale')
+        self.beat(80)
+        self.assertEqual(len(self.events('lane_stale')), 1)                # chưa qua thêm một ngưỡng
+        self.beat(96)
+        self.assertEqual([e['minutes'] for e in self.events('lane_stale')], [50, 96])
+        marks = json.loads((self.root / 'state/heartbeat.json').read_text())
+        self.assertIn('ATTEND/term_qa', marks['lanes'])
+
+    def test_recent_room_event_or_non_running_lane_is_not_reported(self):
+        self.age_lane(120)
+        self.cli('note', 'ATTEND', 'Manager vẫn đang làm')
+        self.beat(1)
+        self.assertEqual(self.events('lane_stale'), [])                    # phòng có sự kiện trong 45' gần nhất
+        self.beat(60, '--stale-minutes', '90')
+        self.assertEqual(self.events('lane_stale'), [])                    # ngưỡng tuỳ chỉnh
+        self.cli('lane', 'set', 'ATTEND', '--handle', 'term_qa', '--status', 'waiting')
+        self.beat(300)
+        self.assertEqual(self.events('lane_stale'), [])
+        self.cli('room', 'new', 'DONE-ROOM', '--title', 'Xong')
+        self.cli('lane', 'add', 'DONE-ROOM', '--role', 'qa', '--handle', 'term_done')
+        self.cli('room', 'done', 'DONE-ROOM')
+        self.beat(300)
+        self.assertEqual(self.events('lane_stale'), [])                    # phòng không active thì thôi
+
+    def test_thu_ky_silence_is_a_company_event(self):
+        ps = self.ps
+        ps.write_text('/bin/bash bin/wait-event.sh --timeout 14400 --types ask_opened\n'
+                      '/bin/bash bin/wait-event.sh --room ATTEND\n')
+        self.beat(0)
+        self.beat(120)
+        self.assertEqual(self.events('thu_ky_silent'), [])                 # watcher Thư ký còn chạy
+        ps.write_text('/bin/bash bin/wait-event.sh --room ATTEND\n')       # chỉ còn watcher Manager
+        self.beat(130)                                                     # bắt đầu đếm từ đây
+        self.beat(150)
+        self.assertEqual(self.events('thu_ky_silent'), [])
+        self.beat(161)
+        silent = self.events('thu_ky_silent')
+        self.assertEqual(len(silent), 1)
+        self.assertIsNone(silent[0]['room'])
+        self.assertEqual(silent[0]['minutes'], 31)
+        self.assertEqual(self.board()['events'][0]['type'], 'thu_ky_silent')
+        self.beat(175)
+        self.assertEqual(len(self.events('thu_ky_silent')), 1)             # không báo lặp trong cùng ngưỡng
+        ps.write_text('/bin/bash bin/wait-event.sh --timeout 14400\n')    # Thư ký arm lại
+        self.beat(200)
+        self.beat(240)
+        self.assertEqual(len(self.events('thu_ky_silent')), 1)
+
+    def test_company_event_wakes_unfiltered_waiter_but_not_room_waiter(self):
+        self.ps.write_text('')                                           # không còn watcher Thư ký
+        self.beat(0)                                                       # bắt đầu đếm im lặng
+        def waiter(*args):
+            process = subprocess.Popen(['bash', str(WAITER), '--timeout', '1.5', '--interval', '0.02', *args],
+                                       env=self.env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.addCleanup(lambda: process.poll() is None and process.kill())
+            return process
+        thu_ky, manager = waiter('--types', 'lane_stale,thu_ky_silent'), waiter('--room', 'ATTEND')
+        time.sleep(0.2)   # cho hai watcher lấy mốc (giống WaitEventTests), không phải để giả giờ
+        self.beat(40)
+        output, _ = thu_ky.communicate(timeout=5)
+        self.assertEqual((thu_ky.returncode, json.loads(output)['type']), (0, 'thu_ky_silent'))
+        output, _ = manager.communicate(timeout=5)
+        self.assertEqual((manager.returncode, output), (2, ''))            # room null không đánh thức Manager
+
+    def test_invalid_arguments(self):
+        for args in (['--now', 'không phải giờ'], ['--stale-minutes', '0'], ['--interval', '-1']):
+            with self.subTest(args=args):
+                result = subprocess.run([sys.executable, str(HEARTBEAT), '--once', *args], env=self.env,
+                                        text=True, capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, 2)
+        result = subprocess.run([sys.executable, str(HEARTBEAT), '--now', self.start.isoformat()], env=self.env,
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 2)                              # --now không kèm --once: không chạy vòng
 
 
 class WaitEventTests(unittest.TestCase):

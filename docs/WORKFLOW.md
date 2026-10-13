@@ -31,7 +31,7 @@ Manager quyết phòng cần vai nào (việc chỉ server thì không có Desig
 | 3 | **Gói phòng** (`cho-goi`): phạm vi, vai cần dùng, có cần chìa khoá app | Manager | ✅ **Cổng 1** |
 | 4 | **Thiết kế** (`thiet-ke`) ‖ **Kiến trúc** (`kien-truc`) chạy song song | Designer, Techlead | ✅ **Cổng 2, 3, 4** |
 | 5 | **Kế hoạch test** (`ke-hoach-test`) từ "Luật luôn đúng"; Manager duyệt | QA | |
-| 6 | **Code** (`code`): dev server + dev web, test trong code | Dev | |
+| 6 | **Code** (`code`): dev server + dev web, test trong code. Phòng có Designer: lane dev web chỉ mở sau cổng 3 (`lane add` chặn; `--force-gate` khi anh đồng ý ngoại lệ) | Dev | |
 | 7 | **Test** (`test`): QA test app thật (giữ chìa khoá app) ⇒ vòng lỗi | QA ↔ Dev | chỉ lỗi cần quyết hành vi |
 | 8 | **Review** (`review`): lane mới, sửa hết 🔴 | Review ↔ Dev | |
 | 9 | **Check cuối** (`cho-check`): báo cáo QA + kết luận review nguyên văn | Manager | ✅ **Cổng 5** |
@@ -69,6 +69,8 @@ Ai nhận câu trả lời thì ghi vào state trước, để board luôn khớ
 
 QA `bug add` (bước tái hiện, ảnh, console) ⇒ thẻ lỗi trên board ⇒ Manager giao dev đúng mảng (`server`/`web`),
 `fixing` ⇒ dev sửa, chuyển `retest` ⇒ QA chạy lại đúng tình huống ⇒ **chỉ QA được đóng** (`closed`); còn lỗi ⇒ `fixing`.
+Lỗi cố ý không sửa trong phòng ⇒ Manager ghi backlog rồi đặt `deferred` ("Dời backlog", bắt buộc ghi chú trỏ tới dòng
+backlog / commit) — thẻ thôi tính "chưa đóng" và rời "Việc của anh".
 Lỗi cần quyết hành vi sản phẩm ⇒ `needsBoss` ⇒ lên "Việc của anh" kèm một câu hỏi `quyet`.
 
 ## Chìa khoá app
@@ -105,8 +107,8 @@ hoặc phòng xong. Báo bằng tiếng Việt: vấn đề → phương án →
 ## Lệnh hay dùng
 
 ```bash
-# Anh chạy (một lần mỗi phiên làm việc, trong terminal Orca riêng) rồi mở http://127.0.0.1:8765
-python3 ~/sportshub-company/bin/board-server.py
+# Anh chạy: bật board server + nhịp kiểm (heartbeat) nền nếu chưa chạy, rồi mở board
+~/sportshub-company/bin/open-board.sh
 open ~/sportshub-company/board.html              # không có server: board đọc data/board.js, reload để làm mới
 
 # Thư ký / Manager
@@ -116,14 +118,19 @@ python3 bin/company.py room list [--all]          python3 bin/company.py room sh
 python3 bin/company.py ask list --open            python3 bin/company.py ask resolve ID --choice ok --via thu-ky
 python3 bin/company.py key status
 python3 bin/company.py room done KEY              # in lệnh dọn worktree, không tự chạy
-bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note   # Thư ký chạy nền
+bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,thu_ky_silent   # Thư ký chạy nền
 bin/wait-event.sh --room KEY                      # Manager chạy nền
 ```
 
 ## Giới hạn đã biết
 
-- **Thư ký không có nhịp dự phòng.** Chỉ thức khi có sự kiện (Sếp bấm board, Manager/QA ghi state). Lane treo mà
-  không ghi gì thì Thư ký không biết; lớp canh còn lại là Orca báo terminal đứng yên.
+- **Nhịp dự phòng là `bin/heartbeat.py`** — script thường, không dùng AI, `open-board.sh` bật nền mỗi 15 phút
+  (`state/heartbeat.pid`, log `state/heartbeat.log`). Lane `running` đứng yên quá 45 phút trong một phòng không ghi
+  sự kiện nào ⇒ sự kiện `lane_stale`; không còn tiến trình watcher của Thư ký
+  (`wait-event.sh` không lọc `--room`) quá 30 phút ⇒ `thu_ky_silent`. Không báo lặp (chỉ báo lại sau thêm một ngưỡng). Watcher của Thư ký thức vì hai loại này: đọc màn
+  hình lane, kẹt thì nhắn Manager; im lặng thì xử lý sự kiện dồn. Giới hạn còn lại: nhịp kiểm chỉ thấy *dấu hiệu*
+  (đứng yên, file cũ), không biết lane đang nghĩ lâu hay kẹt thật; Thư ký chết hẳn thì `thu_ky_silent` chỉ hiện trên
+  board, không ai thức để xử lý tới khi anh mở lại phiên Thư ký. Nhịp kiểm chỉ chạy khi máy thức và đã chạy `open-board.sh`.
 - Lane codex không đọc skill Claude: brief của lane phải chép sẵn khối luật cần (Git, W12, C-rule liên quan).
 - `room done` chỉ in lệnh dọn worktree; kiểm `git status` và commit chưa push trước khi chạy.
 - `open-room.sh` tạo worktree từ `main` ở máy: skill `phong-manager` và các skill `phong-*` phải đã nằm trên `main`.

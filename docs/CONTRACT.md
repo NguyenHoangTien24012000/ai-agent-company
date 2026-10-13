@@ -9,11 +9,13 @@ Không sửa file này trong lane; thấy thiếu thì ghi vào báo cáo mục 
 bin/company.py        CLI duy nhất ghi state (lane L1)
 bin/board-server.py   server localhost: phục vụ board + nhận nút bấm (lane L1)
 bin/wait-event.sh     chờ sự kiện mới, có lọc theo phòng/loại (lane L1)
+bin/heartbeat.py      nhịp kiểm không dùng AI: lane đứng yên, Thư ký ngủ quên (open-board.sh bật nền)
 bin/open-room.sh      mở phòng: worktree + env + terminal Manager (lane L4)
 board.html            board (lane L2)
 state/rooms/<KEY>.json   một file mỗi phòng
 state/company.json       trạng thái chung (chìa khoá app)
 state/events.jsonl       sổ sự kiện, mỗi dòng một JSON
+state/heartbeat.json     dấu chống báo lặp của nhịp kiểm · heartbeat.pid · heartbeat.log
 data/board.js            `window.BOARD = <snapshot>;` — company.py sinh lại sau MỖI lần ghi (cho board mở bằng file://)
 skills/thu-ky/SKILL.md   vòng làm việc của Thư ký (lane L4)
 CLAUDE.md                ngữ cảnh cho phiên Thư ký (lane L4)
@@ -109,7 +111,7 @@ do chính ask này ghi thì gỡ về `null` (cổng do ask sau ghi thì giữ).
 ```json
 { "id": "ATTEND-b2", "room": "ATTEND", "title": "…", "area": "server",   // server | web
   "steps": "markdown", "shots": ["…png"], "severity": "high",            // high | normal
-  "status": "open",                    // open → fixing → retest → closed (retest → fixing nếu còn lỗi)
+  "status": "open",                    // open → fixing → retest → closed (retest → fixing nếu còn lỗi); open|fixing → deferred
   "assignee": null,                    // vai, ví dụ dev-web
   "needsBoss": false,                  // true = cần Sếp quyết hành vi → hiện ở "Việc của anh"
   "history": [ {"at":"…","by":"qa","status":"open","note":"…"} ],
@@ -117,6 +119,10 @@ do chính ask này ghi thì gỡ về `null` (cổng do ask sau ghi thì giữ).
 ```
 
 Chỉ `--by qa` được đặt `closed` (CLI từ chối nếu khác).
+
+`deferred` = **dời sang backlog** (lỗi có thật nhưng cố ý không sửa trong phòng, W7): chỉ từ `open` hoặc `fixing`,
+bắt buộc `--note` không trống trỏ tới dòng backlog hoặc commit ghi nó. Là trạng thái cuối như `closed`: không còn tính
+"chưa đóng" trên board (nhãn "Dời backlog"), không vào `myQueue` kể cả `needsBoss`.
 
 ## `state/company.json`
 
@@ -135,11 +141,14 @@ Chìa khoá app: chỉ một phòng được chạy app thật (DB 5432, server 
 
 ## `state/events.jsonl`
 
-Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. Loại:
+Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. Sự kiện cấp công ty có `"room": null`
+(ghi bằng `Company.record`, không đổi state phòng). Loại:
 
 `room_opened` · `room_changed` (step/links/roles…) · `room_done` · `lane_changed` · `ask_opened` · `ask_resolved` · `ask_reopened` · `ask_cancelled` · `forward_failed`
 (có `via`, `choice`, `note`) · `bug_opened` · `bug_changed` (có `status`, `assignee`) · `key_requested` · `key_taken` · `key_released` (có `handedTo`) ·
-`overlap` · `evidence` · `note`
+`overlap` · `evidence` · `note` · `lane_stale` (`handle`, `role`, `minutes`) · `thu_ky_silent` (`room: null`, `minutes`)
+
+`lane_changed` của `lane add --force-gate` (lane dev-web mở trước cổng 3) có thêm `forceGate: true` và `note`.
 
 ## CLI `bin/company.py`
 
@@ -151,7 +160,8 @@ room set KEY [--step S] [--title T] [--manager-terminal H] [--roles a,b] [--need
              [--link name=path]... [--status active|done|cancelled]
 room show KEY            room list [--all]
 room done KEY            # status=done, step=xong, nhả chìa khoá nếu giữ; IN lệnh dọn worktree, KHÔNG tự chạy
-lane add KEY --role R --handle H [--model M]
+lane add KEY --role R --handle H [--model M] [--force-gate]
+             # role dev-web + phòng có designer + gates["3"] chưa ghi ⇒ exit 2. --force-gate: Sếp đồng ý ngoại lệ
 lane set KEY --handle H --status running|waiting|done|closed [--note N]
 ask add KEY --kind duyet|quyet|thaotac [--gate N] --title T [--context C] [--option k=label]... [--recommend k] [--link L]...
             # in ra id. kind=duyet mà không có --option ⇒ mặc định ok=Duyệt, sua=Cần sửa
@@ -160,7 +170,7 @@ ask reopen ID [--note N]                                  # Sếp bấm nhầm; 
 ask cancel ID [--note N]                                  # Manager rút ask chưa ai trả lời
 ask list [--open] [--room KEY]
 bug add KEY --title T --area server|web [--steps S] [--shot P]... [--severity high|normal] [--needs-boss] --by ROLE
-bug set ID [--status S] [--assignee R] [--note N] --by ROLE
+bug set ID [--status S] [--assignee R] [--note N] --by ROLE    # S=deferred bắt buộc --note
 key request KEY [--reason R]   key take KEY   key release KEY [--note N]   key status
 overlap KEY --with OTHER --files a,b [--conflict]   # Thư ký ghi; --clear để xoá
 evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch
@@ -173,7 +183,7 @@ snapshot                 # in JSON snapshot (giống data/board.js)
 ```json
 { "generatedAt": "…", "appKey": {…}|null, "keyQueue": [ … ],
   "rooms": [ ROOM, … ],                 // active trước, rồi done 7 ngày gần nhất
-  "myQueue": [ ASK|BUG(needsBoss), … ], // mọi ask open + bug needsBoss chưa closed, cũ nhất trước
+  "myQueue": [ ASK|BUG(needsBoss), … ], // mọi ask open + bug needsBoss chưa closed/deferred, cũ nhất trước
   "events": [ … 50 sự kiện mới nhất, mới nhất trước … ] }
 ```
 
@@ -194,7 +204,20 @@ snapshot                 # in JSON snapshot (giống data/board.js)
 
 `wait-event.sh [--room KEY] [--types a,b] [--timeout 14400] [--interval 5]`
 Chặn tới khi `events.jsonl` có dòng mới KHỚP bộ lọc (tính từ lúc gọi), in các dòng khớp, exit 0. Hết giờ exit 2.
-Thư ký: không lọc. Manager: `--room KEY`.
+Thư ký: lọc theo `--types` (skill `thu-ky`). Manager: `--room KEY` — sự kiện cấp công ty (`room: null`) không khớp.
+
+## `bin/heartbeat.py`
+
+`heartbeat.py [--interval 900] [--stale-minutes 45] [--thu-ky-minutes 30] [--once] [--now ISO]` — script thường,
+không dùng AI. Mỗi lượt, với mỗi phòng active:
+- lane `running` có `updatedAt` cũ hơn `--stale-minutes` **và** phòng không có sự kiện nào (trừ sự kiện của chính nhịp
+  kiểm) trong cùng khoảng ⇒ `Company.record('lane_stale', {handle, role, minutes}, room)`;
+- không có tiến trình `wait-event.sh` nào không lọc `--room` (watcher của Thư ký) liên tục quá `--thu-ky-minutes` ⇒
+  `thu_ky_silent` cấp công ty (mốc bắt đầu lưu ở `heartbeat.json`; test thay `ps` bằng `HEARTBEAT_PS_FILE`).
+
+Không báo lặp: cùng (room, handle) — hay Thư ký — chỉ báo lại khi đã qua thêm một ngưỡng kể từ lần báo trước;
+dấu ở `state/heartbeat.json`. Lane hết `running` thì xoá dấu. `--now` (chỉ kèm `--once`) giả giờ cho test.
+`bin/open-board.sh` bật nó nền (nohup, `state/heartbeat.log`) nếu `state/heartbeat.pid` không trỏ tới tiến trình đang chạy.
 
 ## Board (`board.html`)
 
