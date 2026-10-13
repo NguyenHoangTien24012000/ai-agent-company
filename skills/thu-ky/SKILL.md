@@ -98,6 +98,13 @@ ghi `company.py overlap` cho cả hai thẻ; chỉ ghi khi khác board. Rẻ và
 "có commit mới không". `--dry-run` để xem trước. Dòng `🔴 XUNG ĐỘT THẬT` ⇒ báo Sếp (phòng nào gộp trước, phòng kia rebase).
 Chỉ ⚠️ đụng file mà gộp sạch ⇒ không báo, board đã hiện.
 
+### 3b. Tài nguyên máy (mỗi vòng, rẻ)
+```bash
+ps -eo rss,command | grep -E "[c]laude |[c]odex" | awk '{s+=$1;n++} END{printf "%d phiên AI, %.1f GB\n", n, s/1048576}'
+```
+Manager tự quyết đóng lane (skill `phong-manager`, "Vòng đời lane"). Thư ký chỉ nhắc khi một phòng còn lane `done`
+không ghi lý do giữ, hoặc tổng phiên AI vượt ~30 — nhắn Manager phòng đó, không tự đóng lane của phòng khác.
+
 ### 4. Kiểm số (phòng sang `cho-gop`/`cho-check`, hoặc ask cổng 5/6)
 Không tin số Manager báo — chạy lại:
 1. Lấy claim của Manager: context của ask cổng 5/6, hoặc báo cáo trong `<worktree>/.scratch/<key>/`. Cần: SHA HEAD, lệnh, kết quả (số test, pass/fail).

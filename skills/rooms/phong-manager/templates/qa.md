@@ -11,6 +11,10 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - `.scratch/<key>/reports/qa.md`
 KHÔNG sửa code, test trong code, `docs/`. Thấy lỗi thì BÁO, không sửa.
 
+## Skill dùng ở bước này
+- `phong-qa` — quy trình QA của phòng (DB riêng, chìa khoá app, Playwright, báo lỗi).
+- `web-design-guidelines` — soát a11y và chuẩn giao diện trên các màn đã test.
+
 ## Problem
 <tính năng làm gì; màn nào; tài khoản/vai nào liên quan>
 Đầu vào: `docs/features/<tên>.md` mục "Luật luôn đúng", `.scratch/<key>/spec.md`, `.scratch/<key>/techlead.md`.

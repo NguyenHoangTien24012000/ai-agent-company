@@ -15,7 +15,8 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
 3. Hiện trạng thật: `server/src/main/resources/db/migration/*.sql` (nguồn sự thật DB), `docs/data/00-erd-hien-trang.md`,
    `docs/reference/` (bảng/endpoint máy sinh), `docs/api/00-quy-uoc-api.md`, các ADR liên quan trong `docs/adr/`.
 4. Code mảng sẽ chạm: `server/src/main/java/com/sportshub/<mảng>/` — service công khai, `@NamedInterface`.
-5. Skill repo dùng khi cần: `java-architect`, `postgres-pro`, `api-designer`, `domain-modeling` (bảng từ vựng, ADR).
+5. Skill: `server-khuon` (khuôn server thật — thắng khi lệch), `postgres-pro`, `flyway-migrations`; đụng vị trí thì `postgis`,
+   `design-postgis-tables`; API thì `api-designer`; bảng từ vựng/ADR thì `domain-modeling` (plugin mattpocock-skills).
 
 ## Khuôn `techlead.md`
 

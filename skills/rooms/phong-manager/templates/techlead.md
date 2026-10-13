@@ -12,6 +12,11 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - `.scratch/<key>/reports/techlead.md`
 KHÔNG sửa code, migration, `docs/`, `pom.xml`, `package.json`. Cần file khác ⇒ `## Blocked On`.
 
+## Skill dùng ở bước này
+- `server-khuon` — khuôn server thật của repo (Boot 4, Modulith, Flyway, Testcontainers). Khi lệch với skill khác, nó thắng.
+- `postgres-pro` + `flyway-migrations` — cột, chỉ mục, migration.
+- Khi đụng vị trí/khoảng cách: `postgis`, `design-postgis-tables`. Khi thiết kế API: `api-designer`.
+
 ## Problem
 <2–4 câu từ spec: tính năng làm gì, luật nghiệp vụ chính>
 Đầu vào: `.scratch/<key>/spec.md`, `docs/features/<tên>.md` (nhất là "Luật luôn đúng").

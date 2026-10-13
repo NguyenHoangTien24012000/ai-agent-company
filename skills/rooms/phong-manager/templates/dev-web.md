@@ -13,6 +13,10 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - <file khác Manager cho phép; `components/` chỉ khi Manager ghi rõ>
 Cần file khác ⇒ `## Blocked On`, không tự sửa.
 
+## Đọc trước khi code (Codex: mở các file này như tài liệu)
+- `.claude/skills/web-khuon/SKILL.md` — BẮT BUỘC: khuôn web thật của repo (React Query, RHF + zod, Router 7, i18n, theme), thắng mọi tài liệu khác khi lệch.
+- `.claude/skills/react-expert/SKILL.md`, `.claude/skills/typescript-pro/SKILL.md` — khi cần mẫu React/TypeScript chung (đọc khối "⛔ ĐỌC KHỐI NÀY TRƯỚC").
+
 ## Problem
 <việc lượt này: màn nào, theo nghiem-thu đã qua cổng 3 (`.impeccable/review/nghiem-thu.html`, bản lab `web/src/lab/<khu>`),
 API theo `.scratch/<key>/techlead.md`; hoặc "sửa lỗi <ID>: bước tái hiện …">

@@ -11,6 +11,12 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - `.scratch/<key>/reports/review.md`
 Chỉ đọc mọi thứ khác. Không sửa code, không chạy `git add/commit/checkout/reset/stash`.
 
+## Skill dùng ở bước này (Codex: mở như tài liệu)
+- Bộ luật `docs/architecture/03-luat-review.md` + `.claude/agents/reviewer.md` — nguồn chính, luôn đọc.
+- Khuôn để so: `.claude/skills/server-khuon/SKILL.md`, `.claude/skills/web-khuon/SKILL.md`.
+- Java: `.claude/skills/java-review-patterns/SKILL.md`. Có migration: `.claude/skills/flyway-migrations/SKILL.md`.
+- Đụng đăng nhập/quyền: `.claude/skills/springboot-security/SKILL.md`, `.claude/skills/security-reviewer/SKILL.md`.
+
 ## Problem
 Soi toàn bộ thay đổi của phòng: `git diff main...HEAD` + `git status --porcelain` (gồm file chưa commit).
 <Vòng ≥ 2: những 🔴 vòng trước — kiểm đã sửa đúng chưa, và soi lại phần diff mới>

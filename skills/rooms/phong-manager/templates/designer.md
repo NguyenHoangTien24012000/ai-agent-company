@@ -12,6 +12,11 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - `.scratch/<key>/reports/designer.md`
 Cần file khác ⇒ ghi vào báo cáo mục `## Blocked On`, không tự sửa.
 
+## Skill dùng ở bước này
+- `thiet-ke-man` — quy trình thiết kế màn (ý tưởng → lab → nghiệm thu), cùng plugin `impeccable`.
+- `web-khuon` — giới hạn khi dựng lab: component dùng chung, màu theo vai trò, i18n.
+- `web-design-guidelines` — tự soát a11y trước khi trình cổng 3.
+
 ## Problem
 <2–4 câu: màn này giải nỗi đau gì, ai dùng — chép từ docs/features/<tên>.md mục "Việc nó giải">
 

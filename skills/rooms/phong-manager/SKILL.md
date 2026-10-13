@@ -99,6 +99,13 @@ orca terminal send --terminal $H --text "touch .lanes/tmp/probe-$k-<vai>" --ente
 sleep 3; ls .lanes/tmp/probe-$k-<vai>                     # PHẢI có, không thì đóng terminal, tạo lại
 ```
 
+Mức suy nghĩ (`--effort` của Claude, `model_reasoning_effort` của Codex) — đặt theo việc, không mặc định high:
+
+| Lượt | Mức |
+|---|---|
+| Techlead, Designer, Review, dev lượt đầu của một lát | `high` |
+| QA chạy ca test theo kế hoạch đã duyệt, dev sửa lỗi nhỏ / sửa theo review, Designer sửa lab theo ghi chú | `medium` |
+
 Dispatch MỘT câu trỏ vào brief:
 
 ```bash
@@ -122,6 +129,21 @@ Lane codex chạy sandbox: không ghi được `$CO/state` ⇒ Manager tự `$C 
 Lane xong ⇒ `$C lane set $KEY --handle $H --status done --note "<1 dòng>"`; hết việc ⇒ `orca terminal close --terminal $H --tab`
 rồi `--status closed`.
 
+**Vòng đời lane — Manager quyết đóng lane nào** (máy chỉ có chừng ấy RAM: một đợt 6 phòng từng để 65 phiên AI mở cùng
+lúc, 7 GB, máy còn ~70 MB trống). Mỗi lần một lane báo xong, Manager tự hỏi: *lượt tới của phòng còn cần đúng phiên này
+(nhớ ngữ cảnh) không?* Không ⇒ đóng ngay. Mặc định:
+
+| Lane | Đóng khi |
+|---|---|
+| Techlead | qua cổng 4 và không còn câu kỹ thuật treo |
+| Designer | qua cổng 3 (sửa lab sau này ⇒ mở lane mới, đọc lại `nghiem-thu.html`) |
+| QA | sau lượt `ke-hoach`; mở lại cho lượt `test`/`test-lai` — trừ khi lượt test sắp tới ngay |
+| dev-server / dev-web | lỗi QA đã đóng hết và review không còn 🔴 — giữ trong vòng sửa lỗi vì phiên còn nhớ code |
+| Review | sau mỗi vòng có kết luận (vòng sau nên là phiên MỚI cho khách quan) |
+
+Đóng = `orca terminal close --terminal $H --tab` rồi `$C lane set $KEY --handle $H --status closed --note "<vì sao>"`.
+Giữ một lane `done` qua đêm phải có lý do ghi trong `--note`. Phiên Manager thì luôn giữ.
+
 ## 6. Designer + Techlead song song → cổng 2, 3, 4
 
 Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo cáo, feedback qua `orca terminal send` tới khi đạt.
@@ -138,6 +160,8 @@ Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo c
   test trong code bắt buộc (C9). Migration: `V<số kế tiếp trên nhánh>__<desc>.sql`, số chốt lại lúc gộp (mục 11).
 
 ## 8. Vòng lỗi (step `test`)
+
+Skill `triage` (plugin mattpocock-skills) để xếp lỗi: sửa trong phòng, dời backlog, hay hỏi Sếp.
 
 QA `bug add` ⇒ watcher báo `bug_opened` ⇒ Manager đọc thẻ, giao dev đúng `area`:
 
@@ -178,6 +202,8 @@ Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lan
 
 ## 11. Chuẩn bị gộp → cổng 6
 
+Xung đột khi rebase ⇒ skill `resolving-merge-conflicts` (plugin mattpocock-skills); giữ luật của CẢ HAI phía.
+
 ```bash
 $C room set $KEY --step chuan-bi-gop
 git rebase main                      # main local mới nhất; Sếp pull main ở repo gốc nếu cần (ask thaotac)
@@ -193,10 +219,14 @@ Ask cổng 6 kèm số test và commit list (`git log --oneline main..HEAD`). Ch
 git -C /Users/tien/Claude/sportshub status --porcelain      # có thay đổi tracked ở repo gốc ⇒ DỪNG, hỏi Sếp
 git -C /Users/tien/Claude/sportshub merge --ff-only phong/$k
 git -C /Users/tien/Claude/sportshub push
+docker exec sportshub-db psql -U sportshub -d postgres -c "DROP DATABASE IF EXISTS sportshub_${k//-/_}"   # DB QA riêng của phòng
 $C room done $KEY                     # in lệnh dọn — đóng lane trước, lệnh xoá worktree chạy CUỐI (nó đóng luôn terminal này)
 ```
 
 ff-only thất bại (main đã đi tiếp) ⇒ quay lại đầu mục 11.
+
+Sau `room done`: chạy skill `retro` (plugin mattpocock-skills) — cái gì chạy tốt, cái gì vướng, lỗ hổng quy trình nào lộ ra —
+ghi vào `.scratch/<key>/retro.md` và `company.py note <KEY> "retro: …"` để Thư ký gom cho cả công ty.
 
 ## 12. Git trong phòng
 

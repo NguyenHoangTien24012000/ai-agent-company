@@ -14,6 +14,11 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - <file khác Manager cho phép, ví dụ `SecurityConfig.java`>
 Cần file khác ⇒ `## Blocked On`, không tự sửa.
 
+## Đọc trước khi code (Codex: mở các file này như tài liệu)
+- `.claude/skills/server-khuon/SKILL.md` — BẮT BUỘC: khuôn server thật của repo, thắng mọi tài liệu khác khi lệch.
+- `.claude/skills/jpa-patterns/SKILL.md` — entity, N+1, giao dịch (đọc khối "⛔ ĐỌC KHỐI NÀY TRƯỚC" trước).
+- Có migration: `.claude/skills/flyway-migrations/SKILL.md`. Đụng vị trí: `.claude/skills/postgis/SKILL.md`.
+
 ## Problem
 <việc lượt này: theo techlead.md mục …, hoặc "sửa lỗi <ID>: bước tái hiện …">
 Đầu vào: `.scratch/<key>/techlead.md` (đã qua cổng 4 — làm ĐÚNG nó), `docs/features/<tên>.md`, `.scratch/<key>/qa-plan.md`.
