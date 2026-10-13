@@ -49,7 +49,9 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
 - **Ranh giới**: mảng chỉ giữ ID của mảng khác (C19); Controller đổi Request thành `<Độngtừ><Danhtừ>Command` (C20).
 - **ADR**: quyết định khó đảo ngược (đổi mô hình dữ liệu, chọn thư viện, đổi luật đã chốt) ⇒ viết nháp theo
   `docs/adr/0000-mau-adr.md` (Bối cảnh / Quyết định / Hệ quả) vào `.scratch/<key>/adr-nhap-<tên>.md`; số ADR lấy lúc gộp.
-- **W8**: mọi thứ mới (cột, bảng, thư viện, đổi cách làm) chỉ là ĐỀ XUẤT có khuyến nghị (W4), nằm trong mục "Cần Sếp duyệt".
+- **Cần Sếp duyệt** chỉ gồm: bảng/cột/quan hệ ngoài thiết kế đã duyệt, hợp đồng dùng chung giữa phòng, tiền/quyền/bảo mật,
+  thư viện/công nghệ mới, đổi luật dự án, việc khó đảo ngược. Chi tiết kỹ thuật còn lại Techlead + Manager tự chốt,
+  ghi một dòng trong mục "Đã tự quyết".
 - **W9**: không thiết kế tối ưu (index phụ, cache) khi chưa có số đo; ghi vào "Cố ý chưa làm".
 - Thuật ngữ trong `techlead.md` kèm `()` giải thích, chép đúng bảng thuật ngữ cuối `CLAUDE.md` — Sếp đang học.
 

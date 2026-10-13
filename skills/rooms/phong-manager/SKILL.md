@@ -37,12 +37,23 @@ Ghép hai nguồn: file phòng (`state/rooms/<KEY>.json`) nói bước + ai đan
 Có lane `running` ⇒ đọc màn hình nó (`orca terminal read --terminal <h> --screen --limit 30`) và arm lại watcher (mục 5).
 Mở lần đầu (chưa có `$R/`): `mkdir -p $R/briefs $R/reports`, tạo `$R/NHAT-KY.md` — mỗi quyết định một dòng có ngày.
 
+## 1b. Luồng nhỏ — chọn trước khi hỏi đáp
+
+Việc nhỏ = MỘT hành vi rõ, trong một mảng, dùng mẫu sẵn, dễ hoàn tác; KHÔNG đụng tiền/quyền/bảo mật, hợp đồng giữa
+phòng, thư viện mới hay bảng/cột. Manager tự phân loại; giữa chừng thấy vượt tiêu chí ⇒ chuyển luồng đầy đủ.
+- Yêu cầu Sếp đã rõ = đã chốt phạm vi; chỉ hỏi phần thiếu ảnh hưởng kết quả.
+- Vai: Manager kiêm Techlead, một dev, một lane kiểm độc lập (QA + Review gộp). Không Designer, không gói phòng.
+- Hồ sơ: một file `.scratch/<key>/spec.md` ngắn — phạm vi, điều kiện đạt, quyết định, kết quả kiểm. Luật đổi thì sửa
+  hồ sơ tính năng đang có.
+- Bỏ cổng 1–4. `make check` một lần trên bản cuối; Sếp duyệt MỘT lần: cổng 5 + 6 (gộp + push).
+- Luồng đầy đủ giữ cho: màn mới cần định hướng, nghiệp vụ mới, hoặc việc vượt tiêu chí trên.
+
 ## 2. Hỏi đáp Sếp → spec + hồ sơ tính năng (step `hoi-dap`)
 
 - ⛔ **Sếp chọn, không gõ** (chốt 12/10/2026): KHÔNG hỏi mở kiểu "Sếp hình dung thế nào?". Tự đọc ADR, hồ sơ
   tính năng, màn lab để đoán ý Sếp, rồi biến mỗi chỗ còn mơ hồ thành MỘT ask `--kind quyet` có 2–4 phương án cụ thể
   + `--recommend` (W4). CLI tự thêm "Khác — tự viết"; Sếp chỉ gõ khi chọn Khác.
-- Dùng skill `grilling` để tìm cây quyết định; mỗi câu trong một vòng là một ask riêng (có thể mở nhiều ask cùng lúc
+- Chỉ hỏi chỗ mơ hồ ẢNH HƯỞNG KẾT QUẢ (không mặc định `grilling` mọi chỗ); mỗi câu là một ask riêng (có thể mở nhiều ask cùng lúc
   nếu chúng không phụ thuộc nhau), không gộp nhiều câu vào một ask.
 - Đối chiếu phạm vi v0.1 và triết lý trong `CLAUDE.md` ("PHẠM VI v0.1"); ngoài phạm vi ⇒ đề xuất ghi backlog (W7).
 - Viết `$R/spec.md` (câu đã chốt, Q1…Qn) và `docs/features/<tên>.md` theo `docs/features/_khuon.md` —
@@ -232,7 +243,7 @@ $C room set $KEY --step chuan-bi-gop
 git rebase main                      # main local mới nhất; Sếp pull main ở repo gốc nếu cần (ask thaotac)
 ls server/src/main/resources/db/migration/          # so với: git ls-tree --name-only main server/src/main/resources/db/migration/
 git mv …/V12__x.sql …/V13__x.sql     # trùng số ⇒ đổi sang số kế tiếp (file chưa vào main, không phạm C10), sửa chỗ nhắc tên, python3 scripts/docs-gen.py
-make check                           # chép số: server Tests run, web tests, docs-check
+make check > $R/check-$(git rev-parse --short HEAD).log 2>&1   # MỘT lần; số trình Sếp lấy từ log này
 $C room set $KEY --step cho-gop      # Thư ký thức, chạy lại make check, ghi evidence
 ```
 
@@ -261,11 +272,11 @@ Gộp `main` và push LUÔN cần cổng 6. Lane trong worktree không commit đ
 không bao giờ `git add -A`/`git add .`. Message theo mục "Viết message" trong `CLAUDE.md`, kèm dòng `Co-Authored-By`.
 Bảng "KHÔNG BAO GIỜ commit" trong `CLAUDE.md` vẫn áp: `git diff --cached --name-only | grep -E "target/|\.log$|node_modules|\.env"` phải trống.
 
-## 13. Kiểm chứng — không tin báo cáo lane
+## 13. Kiểm chứng — một lần, trên bản cuối
 
-Lane báo "xong, xanh" ⇒ tự chạy lại trước khi đi tiếp hay trình Sếp:
-- `cd server && ./mvnw -B verify` / `cd web && npm test` — đếm số test, phải TĂNG so với trước lane (ghi số vào `NHAT-KY.md`).
-- `git status --porcelain` khớp đúng danh sách file lane báo; lane sửa file ngoài "Files You May Edit" ⇒ trả lại.
-- Có giao diện ⇒ tự mở trang xem (khung 1440 và 390) trước khi trình.
-- Số trình Sếp phải là số bạn vừa chạy trên HEAD cuối, không phải số lane viết (skill `evidence-report`).
-- Trước khi trình code đáng kể vẫn gọi subagent `reviewer` (W12) — lane `review` ở mục 10 là bản đầy đủ cho cổng 5.
+- Lane tự chạy test phần mình đụng. Manager KHÔNG chạy lại toàn bộ sau mỗi lane — chỉ kiểm `git status --porcelain`
+  khớp file lane báo (sửa ngoài "Files You May Edit" ⇒ trả lại) và xem màn (1440 + 390) khi có giao diện.
+- `make check` toàn bộ chạy MỘT lần ở mục 11, sau rebase; lưu log `$R/check-<sha>.log` (Thư ký đọc log này + SHA,
+  chỉ chạy lại khi SHA lệch hoặc log bất thường). Số trình Sếp lấy từ log đó.
+- Review độc lập MỘT lần trước gộp (lane `review`, mục 10); vòng sửa lỗi chỉ soi phần sửa và nơi bị ảnh hưởng.
+

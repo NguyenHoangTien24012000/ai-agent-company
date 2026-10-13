@@ -22,12 +22,23 @@ trên board. **Im lặng không bao giờ là đồng ý.**
 
 Manager quyết phòng cần vai nào (việc chỉ server thì không có Designer) và trình trong gói phòng (cổng 1).
 
+## Luồng nhỏ
+
+Việc nhỏ = MỘT hành vi rõ, trong một mảng, dùng mẫu sẵn, dễ hoàn tác; KHÔNG đụng tiền/quyền/bảo mật, hợp đồng giữa
+phòng, thư viện mới hay bảng/cột. Manager tự phân loại; giữa chừng thấy vượt tiêu chí ⇒ chuyển luồng đầy đủ.
+- Yêu cầu Sếp đã rõ = đã chốt phạm vi; chỉ hỏi phần thiếu ảnh hưởng kết quả.
+- Vai: Manager kiêm Techlead, một dev, một lane kiểm độc lập (QA + Review gộp). Không Designer, không gói phòng.
+- Hồ sơ: một file `.scratch/<key>/spec.md` ngắn — phạm vi, điều kiện đạt, quyết định, kết quả kiểm. Luật đổi thì sửa
+  hồ sơ tính năng đang có.
+- Bỏ cổng 1–4. `make check` một lần trên bản cuối; Sếp duyệt MỘT lần: cổng 5 + 6 (gộp + push).
+- Luồng đầy đủ giữ cho: màn mới cần định hướng, nghiệp vụ mới, hoặc việc vượt tiêu chí trên.
+
 ## Luồng một phòng
 
 | # | Bước (`step` trên board) | Ai | Anh chạm? |
 |---|---|---|---|
 | 1 | Anh chat Thư ký **"mở phòng: <ý tưởng>"** ⇒ worktree `phong/<key>` từ `main`, chép `.env.local`, mở Manager, ghi board | Thư ký | |
-| 2 | **Hỏi đáp** (`hoi-dap`): Manager hỏi để hiểu ý, rồi `grilling` chỗ chưa rõ ⇒ `.scratch/<key>/spec.md` + `docs/features/<tên>.md` | Manager ↔ anh | trả lời câu hỏi |
+| 2 | **Hỏi đáp** (`hoi-dap`): Manager hỏi để hiểu ý, chỉ hỏi chỗ mơ hồ ảnh hưởng kết quả ⇒ `.scratch/<key>/spec.md` + `docs/features/<tên>.md` | Manager ↔ anh | trả lời câu hỏi |
 | 3 | **Gói phòng** (`cho-goi`): phạm vi, vai cần dùng, có cần chìa khoá app | Manager | ✅ **Cổng 1** |
 | 4 | **Thiết kế** (`thiet-ke`) ‖ **Kiến trúc** (`kien-truc`) chạy song song | Designer, Techlead | ✅ **Cổng 2, 3, 4** |
 | 5 | **Kế hoạch test** (`ke-hoach-test`) từ "Luật luôn đúng"; Manager duyệt | QA | |
@@ -36,7 +47,7 @@ Manager quyết phòng cần vai nào (việc chỉ server thì không có Desig
 | 8 | **Review** (`review`): lane mới, sửa hết 🔴 | Review ↔ Dev | |
 | 9 | (Check cuối không còn là bước riêng — gộp vào bước 11, cổng 5 + 6 một lần duyệt) | | |
 | 10 | **Chuẩn bị gộp** (`chuan-bi-gop`): rebase `main`, đổi số migration nếu trùng, `make check` | Manager | |
-| 11 | **Check cuối + cho gộp** (`cho-gop`): báo cáo QA + kết luận review + số test; Thư ký chạy lại `make check` MỘT lần trên SHA đã rebase | Manager, Thư ký | ✅ **Cổng 5 + 6 gộp** (một lần duyệt). Rebase có xung đột lớn ⇒ tách lại hai cổng |
+| 11 | **Check cuối + cho gộp** (`cho-gop`): báo cáo QA + kết luận review + số test; Thư ký đọc log `check-<sha>.log` của Manager, chỉ chạy lại khi SHA lệch/log bất thường | Manager, Thư ký | ✅ **Cổng 5 + 6 gộp** (một lần duyệt). Rebase có xung đột lớn ⇒ tách lại hai cổng |
 | 12 | **Xong** (`xong`): `merge --ff-only` vào `main`, push, `room done`, dọn worktree | Manager | |
 
 ## Sáu cổng duyệt
@@ -48,7 +59,7 @@ Manager quyết phòng cần vai nào (việc chỉ server thì không có Desig
 | 3 | Giao diện mẫu | `nghiem-thu.html` |
 | 4 | Thiết kế Techlead | cột/bảng cụ thể (W8), ADR, thư viện mới |
 | 5 | Check cuối | báo cáo QA + kết luận review |
-| 6 | Cho gộp + push | `make check` của Manager + số Thư ký chạy lại |
+| 6 | Cho gộp + push | log `make check` của Manager trên SHA cuối + Thư ký đối chiếu |
 
 Duyệt (`ok`) ghi vào `gates` của phòng. Chọn khác (`sua` + ghi chú) ⇒ Manager sửa rồi trình lại; cổng chưa ghi.
 
@@ -86,8 +97,8 @@ Thiết kế, giao diện mẫu (`make lab`, 5174) và test (`make check`, Testc
 ## Gộp (sau cổng 5)
 
 1. Manager rebase lên `main` mới nhất; migration trùng số ⇒ đổi file sang số kế tiếp (file chưa vào `main`, không phạm C10).
-2. `make check` xanh ⇒ `room set --step cho-gop`, báo SHA + số test.
-3. Thư ký tự chạy lại `make check` trên đúng SHA đó, ghi `evidence` (khớp / lệch). Lệch ⇒ báo anh.
+2. `make check > .scratch/<key>/check-<sha>.log` xanh ⇒ `room set --step cho-gop`, báo SHA + số test.
+3. Thư ký đọc log đó, đối chiếu SHA với HEAD + worktree sạch, ghi `evidence`. Chỉ chạy lại khi lệch hoặc log bất thường; lệch ⇒ báo anh.
 4. **Cổng 6** ⇒ `git merge --ff-only` vào `main`, push, `company.py room done KEY` (nhả chìa khoá, in lệnh dọn worktree).
 5. Hai phòng cùng xong: phòng được bấm cổng 6 trước gộp trước, phòng sau rebase lại và qua cổng 6 lần nữa.
 
@@ -135,4 +146,3 @@ bin/wait-event.sh --room KEY                      # Manager chạy nền
 - `room done` chỉ in lệnh dọn worktree; kiểm `git status` và commit chưa push trước khi chạy.
 - `open-room.sh` tạo worktree từ `main` ở máy: skill `phong-manager` và các skill `phong-*` phải đã nằm trên `main`.
 - Board không server (file://) chỉ làm mới khi reload; nút trả lời thành chép-rồi-dán.
-- Thư ký chạy `make check` mất vài phút mỗi lần; trong lúc đó vẫn canh sự kiện song song.

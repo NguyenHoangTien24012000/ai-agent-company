@@ -1,6 +1,6 @@
 ---
 name: thu-ky
-description: Vòng làm việc của Thư ký — phiên Claude ở ~/sportshub-company canh các phòng tính năng SportsHub. Dùng MỖI lần phiên này thức dậy từ `bin/wait-event.sh` (dòng JSON như ask_resolved, ask_opened, room_changed, bug_opened, room_done), khi bắt đầu phiên hoặc sau /clear ở ~/sportshub-company, khi Sếp chat "mở phòng: …", "check", "vòng", "báo cáo", "có gì mới", "tiếp", hoặc trả lời một câu hỏi của phòng ngay trong chat này. Gồm: đọc sự kiện, chuyển câu trả lời từ board vào terminal Manager, kiểm đụng file giữa các phòng, tự chạy lại make check để kiểm số Manager báo, quyết có báo Sếp không, mở phòng mới, và arm lại watcher. Không dùng cho Manager hay lane trong worktree phòng (họ dùng phong-manager và các skill phong-*).
+description: Vòng làm việc của Thư ký — phiên Claude ở ~/sportshub-company canh các phòng tính năng SportsHub. Dùng MỖI lần phiên này thức dậy từ `bin/wait-event.sh` (dòng JSON như ask_resolved, ask_opened, room_changed, bug_opened, room_done), khi bắt đầu phiên hoặc sau /clear ở ~/sportshub-company, khi Sếp chat "mở phòng: …", "check", "vòng", "báo cáo", "có gì mới", "tiếp", hoặc trả lời một câu hỏi của phòng ngay trong chat này. Gồm: đọc sự kiện, chuyển câu trả lời từ board vào terminal Manager, kiểm đụng file giữa các phòng, đối chiếu log make check Manager báo, quyết có báo Sếp không, mở phòng mới, và arm lại watcher. Không dùng cho Manager hay lane trong worktree phòng (họ dùng phong-manager và các skill phong-*).
 ---
 
 # thu-ky
@@ -109,17 +109,17 @@ Manager tự quyết đóng lane (skill `phong-manager`, "Vòng đời lane"). T
 không ghi lý do giữ, hoặc tổng phiên AI vượt ~30 — nhắn Manager phòng đó, không tự đóng lane của phòng khác.
 
 ### 4. Kiểm số (phòng sang `cho-gop`/`cho-check`, hoặc ask cổng 5/6)
-Không tin số Manager báo — chạy lại:
-1. Lấy claim của Manager: context của ask cổng 5/6, hoặc báo cáo trong `<worktree>/.scratch/<key>/`. Cần: SHA HEAD, lệnh, kết quả (số test, pass/fail).
-2. `git -C <wt> log -1 --format=%h` PHẢI bằng SHA Manager báo. `git -C <wt> status --porcelain` PHẢI rỗng (có file chưa commit ⇒ số không gắn được với commit nào ⇒ lệch).
-3. `web/node_modules` thiếu ⇒ `cd <wt>/web && npm ci` trước (thư mục bị gitignore, không đổi gì của phòng).
-4. Chạy (Bash `run_in_background: true`, vài phút; watcher sự kiện vẫn phải đang chạy song song):
+Đọc log Manager, KHÔNG chạy lại mặc định (một lần `make check` trên bản cuối là đủ):
+1. Lấy claim của Manager: context của ask cổng 5/6 — SHA HEAD, số test, log `<wt>/.scratch/<key>/check-<sha>.log`.
+2. `git -C <wt> log -1 --format=%h` PHẢI bằng SHA trong tên log. `git -C <wt> status --porcelain` PHẢI rỗng (trừ `.scratch/`).
+3. Chỉ chạy lại khi SHA lệch, thiếu log, hoặc log bất thường (exit ≠ 0, thiếu dòng tổng kết). Khi đó (Bash
+   `run_in_background: true`; watcher vẫn chạy song song; `web/node_modules` thiếu ⇒ `npm ci` trước):
    ```bash
    mkdir -p /Users/tien/sportshub-company/state/verify && cd <wt> && make check > /Users/tien/sportshub-company/state/verify/<KEY>-<sha>.log 2>&1; echo "exit=$?"
    ```
-   `make check` dùng Testcontainers, KHÔNG cần chìa khoá app. Không bao giờ chạy `make stop`/`make dev` (giết theo port, đụng phòng đang giữ chìa khoá).
-5. Đọc log: exit code, số test server (`Tests run: X, Failures: F, Errors: E` tổng của Maven), số test web (vitest `Tests  N passed`), build ok.
-6. Ghi:
+   `make check` dùng Testcontainers, KHÔNG cần chìa khoá app. Không bao giờ chạy `make stop`/`make dev`.
+4. Đọc log: exit code, số test server (`Tests run: X, Failures: F, Errors: E` tổng của Maven), số test web (vitest `Tests  N passed`), build ok.
+5. Ghi:
    ```bash
    $C evidence <KEY> --claim "make check xanh, server 212 test" --manager "212 pass @abc1234" \
      --thu-ky "212 pass, exit 0 @abc1234" --cmd "make check" --ok        # hoặc --mismatch

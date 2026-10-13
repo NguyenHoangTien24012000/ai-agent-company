@@ -37,7 +37,7 @@ Cần file khác ⇒ `## Blocked On`, không tự sửa.
   `python3 scripts/docs-gen.py`. KHÔNG sửa tay `docs/reference/*`.
 
 ## Acceptance Criteria
-- [ ] `cd server && ./mvnw -B verify` xanh, số test TĂNG (ghi số trước/sau)
+- [ ] `cd server && ./mvnw -B verify` xanh; hành vi mới/đổi có test ở tầng bắt được lỗi (không chạy theo chỉ tiêu số test)
 - [ ] `python3 scripts/docs-check.py` xanh
 - [ ] Mỗi "Luật luôn đúng" của lượt này có test chứng minh (ghi tên test)
 Testcontainers cần Docker; sandbox chặn Docker ⇒ chạy phần test không cần DB, ghi rõ trong báo cáo để Manager chạy đủ.

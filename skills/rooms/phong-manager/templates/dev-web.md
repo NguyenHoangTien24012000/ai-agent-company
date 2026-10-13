@@ -53,7 +53,7 @@ hoặc "sửa lỗi <ID>: bước tái hiện …">
 
 ## Acceptance Criteria
 - [ ] `cd web && npm run format:check && npm run lint && npm run check:arch && npm run check:diagrams && npm test && npm run build` xanh
-- [ ] Số test TĂNG (ghi trước/sau)
+- [ ] Có test cho hành vi mới/đổi ở tầng bắt được lỗi (không cần tăng số test cho thay đổi CSS/chữ)
 - [ ] Không chuỗi hiển thị cắm cứng (grep chuỗi tiếng Việt/Anh trong `.tsx` mới); khoá có ở cả `en/` lẫn `vi/`
 - [ ] Không tràn ngang ở 1440 / 820 / 390 (ghi cách đã đo và số đo vào báo cáo)
 

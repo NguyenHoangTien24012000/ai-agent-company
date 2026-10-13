@@ -18,7 +18,8 @@ Nguồn: `docs/features/<tên>.md` mục "Luật luôn đúng", `$R/spec.md`, `$
 ⛔ **Gọn** (Sếp duyệt 13/10 — một đợt từng có 180–450 dòng kế hoạch mỗi phòng, QA giữ chìa khoá app 30–45 phút):
 kế hoạch chạy tay **tối đa ~50 ca, chỉ P0**: luật luôn đúng, quyền, tiền, luồng chính, và màn mới ở 3 cỡ. Thứ test tự
 động (unit/integration của dev) đã phủ thì KHÔNG chép thành ca tay — ghi một dòng "đã phủ bởi <file test>".
-Mỗi luật quan trọng ≥ ba ca:
+Ca chọn theo RỦI RO, không theo chỉ tiêu: luật đúng/bị chặn khi có chặn; ca quyền chỉ khi luật dính quyền.
+Ma trận cỡ × ngôn ngữ × theme chỉ cho màn bị đổi, không nhân cho mọi màn:
 
 | Mã ca | Luật | Loại | Ai (tài khoản) | Dựng dữ liệu | Bước | Mong đợi (màn + mã lỗi C14) |
 |---|---|---|---|---|---|---|
