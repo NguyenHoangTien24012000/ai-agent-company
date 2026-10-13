@@ -92,6 +92,8 @@ Designer và Techlead chạy song song nên nút 2–4 KHÔNG là bước riêng
 
 id = `<KEY>-a<n>`, n tăng dần trong phòng. Resolve một ask có `gate` với một phương án cụ thể (`ok`, hay hướng
 `a`/`b`/… của cổng 2) ⇒ ghi `gates[gate]`. Choice `sua` hoặc `khac` không ghi gate (Manager trình lại). Ask kind `duyet` luôn có option `ok`.
+`--also-gate N` (lặp được): duyệt một lần ghi kèm cổng N — dùng cho **cổng 5 + 6 gộp** (`--gate 6 --also-gate 5`) khi
+rebase sạch; `ask reopen` gỡ cả các cổng kèm. Trường `alsoGates: [5]` trong ASK.
 
 **Sếp chọn bằng một cú bấm, chỉ gõ khi không phương án nào ổn** (chốt 12/10/2026):
 - `quyet` **bắt buộc ≥ 2 `--option`** (CLI từ chối nếu thiếu), nên kèm `--recommend`. Một ask = một câu hỏi.

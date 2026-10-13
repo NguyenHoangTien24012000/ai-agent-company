@@ -7,7 +7,7 @@ Model: Claude sonnet. Lượt này: **<ke-hoach | test | test-lai <ID,…>>**
 sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` toàn máy) bảo hãy tách việc nhiều file.
 
 ## Files You May Edit
-- `.scratch/<key>/qa-plan.md`, `.scratch/<key>/qa-report.html`, `.scratch/<key>/qa/**` (ảnh, dữ liệu dựng)
+- `.scratch/<key>/qa-plan.md`, `.scratch/<key>/qa-report.md`, `.scratch/<key>/qa/**` (ảnh, dữ liệu dựng)
 - `.scratch/<key>/reports/qa.md`
 KHÔNG sửa code, test trong code, `docs/`. Thấy lỗi thì BÁO, không sửa.
 
@@ -33,7 +33,7 @@ KHÔNG sửa code, test trong code, `docs/`. Thấy lỗi thì BÁO, không sử
 ## Acceptance Criteria
 - [ ] Lượt ke-hoach: mỗi luật ≥ 1 ca đúng, 1 ca bị chặn, 1 ca không có quyền; ma trận 1440/820/390 · EN/VI · sáng/tối · ≥ 2 tài khoản
 - [ ] Lượt test: mọi ca có kết quả ✅/❌, mọi ❌ có thẻ lỗi (`bug add`) kèm bước, ảnh, console
-- [ ] `qa-report.html` mở được bằng file://
+- [ ] `qa-report.md` ≤ 60 dòng; kế hoạch tay ≤ ~50 ca P0
 
 ## Before You Report Done
 Viết `.scratch/<key>/reports/qa.md` (ghi đè bản cũ): file đã tạo, số ca chạy/đạt/lỗi, id lỗi đã mở/đóng,

@@ -47,6 +47,12 @@ Mở lần đầu (chưa có `$R/`): `mkdir -p $R/briefs $R/reports`, tạo `$R/
 - Đối chiếu phạm vi v0.1 và triết lý trong `CLAUDE.md` ("PHẠM VI v0.1"); ngoài phạm vi ⇒ đề xuất ghi backlog (W7).
 - Viết `$R/spec.md` (câu đã chốt, Q1…Qn) và `docs/features/<tên>.md` theo `docs/features/_khuon.md` —
   mục "Luật luôn đúng" là đầu vào của QA, viết kỹ nhất.
+
+⛔ **Hồ sơ gọn** (Sếp duyệt 13/10 — một đợt từng viết 250–890 KB chữ mỗi phòng, nhiều chỗ chép lặp):
+- `spec.md` CHỈ là nhật ký câu đã chốt (một dòng mỗi câu). Luật nghiệp vụ chỉ nằm ở `docs/features/<tên>.md` — không chép.
+- Brief lane TRỎ tới file có sẵn (`techlead.md` mục…, `docs/features` mục…), không chép lại nội dung.
+- Báo cáo lane ≤ 40 dòng: làm gì, số test, chỗ còn nghi ngờ. Báo cáo QA là markdown ngắn, không HTML.
+- Không tạo file mới khi một mục trong file có sẵn đủ chỗ.
 - `$C room set $KEY --link spec=$R/spec.md --link featureDoc=docs/features/<tên>.md`
 
 ## 3. Cách hỏi Sếp — mọi cổng và mọi câu cần quyết
@@ -159,8 +165,9 @@ Giữ một lane `done` qua đêm phải có lý do ghi trong `--note`. Phiên M
 ## 6. Designer + Techlead song song → cổng 2, 3, 4
 
 Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo cáo, feedback qua `orca terminal send` tới khi đạt.
-- Designer chạy `thiet-ke-man` (mục "Khi chạy trong phòng"). Xem đủ 3 ý tưởng, **tự chọn 1 + lý do** ⇒ ask cổng 2
-  (option mỗi bản, `--recommend` bản đã chọn). Giao diện mẫu xong + `nghiem-thu.html` ⇒ ask cổng 3.
+- Designer chạy `thiet-ke-man` (mục "Khi chạy trong phòng"). **Chỉ vẽ 3 ý tưởng khi làm màn MỚI hoàn toàn**: xem đủ 3,
+  **tự chọn 1 + lý do** ⇒ ask cổng 2 (option mỗi bản, `--recommend` bản đã chọn). Sửa màn lab đã có ⇒ bỏ cổng 2, sửa
+  thẳng rồi trình cổng 3. Giao diện mẫu xong + `nghiem-thu.html` ⇒ ask cổng 3.
 - Techlead (`$R/techlead.md`, skill `phong-techlead`) ⇒ Manager soi đối chiếu spec ⇒ ask cổng 4: cột/bảng cụ thể,
   ADR, thư viện mới (W8 — chưa ok thì không ai viết migration/thêm dependency).
 `$C room set $KEY --step kien-truc` khi chỉ còn chờ Techlead; `--link nghiemThu=…` khi có.
@@ -209,13 +216,14 @@ Lượt test của QA: QA tự `key request`/`qa-up`/`qa-down`/`release` theo `p
 Thiết kế, lab, test Testcontainers không cần chìa khoá. Lab chạy cổng riêng của phòng và báo
 `$C note $KEY "đang chạy lab <cổng>"`; hai phòng không dùng chung một cổng lab.
 
-## 10. Review — cổng 5
+## 10. Review
 
 Mở lane MỚI `review` (Claude opus, skill `phong-review`), không dùng lại lane Techlead. Đọc `$R/review.md`.
-Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lane review soi lại diff mới). `$C room set $KEY --step cho-check --link qaReport=$R/qa-report.html --link review=$R/review.md`
-⇒ ask cổng 5: dán **nguyên văn** dòng KẾT LUẬN + mọi 🔴/🟡 của review, và tóm tắt báo cáo QA (bug mở/đóng).
+Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lane review soi lại diff mới). Hết 🔴 và QA xong ⇒
+`$C room set $KEY --link qaReport=$R/qa-report.md --link review=$R/review.md` rồi sang ngay mục 11 — KHÔNG trình
+cổng 5 riêng (cổng 5 + 6 gộp một lần duyệt, Sếp duyệt 13/10).
 
-## 11. Chuẩn bị gộp → cổng 6
+## 11. Chuẩn bị gộp → cổng 5 + 6 (một lần duyệt)
 
 Xung đột khi rebase ⇒ skill `resolving-merge-conflicts` (plugin mattpocock-skills); giữ luật của CẢ HAI phía.
 
@@ -228,7 +236,10 @@ make check                           # chép số: server Tests run, web tests, 
 $C room set $KEY --step cho-gop      # Thư ký thức, chạy lại make check, ghi evidence
 ```
 
-Ask cổng 6 kèm số test và commit list (`git log --oneline main..HEAD`). Chỉ khi cổng 6 = `ok`:
+Ask MỘT lần: `$C ask add $KEY --kind duyet --gate 6 --also-gate 5 --title "Check cuối + cho gộp lát …"` với context:
+**nguyên văn** dòng KẾT LUẬN + mọi 🔴/🟡 của review, tóm tắt QA (ca đạt/lỗi, bug mở/đóng), số test sau rebase, commit
+list (`git log --oneline main..HEAD`), danh sách "Đã tự quyết". Rebase phải sửa xung đột lớn (đổi logic, không chỉ số
+migration/docs) ⇒ tách lại: ask cổng 5 trước rồi cổng 6. Chỉ khi ask đó = `ok`:
 
 ```bash
 git -C /Users/tien/Claude/sportshub status --porcelain      # có thay đổi tracked ở repo gốc ⇒ DỪNG, hỏi Sếp

@@ -234,7 +234,8 @@ class Company:
             # Qua cổng = chọn một phương án cụ thể: 'ok' của câu duyệt, hay hướng a/b/c của cổng 2.
             # 'sua' (cần sửa) và 'khac' (Sếp tự viết hướng khác) thì Manager phải trình lại.
             if ask['gate'] is not None and choice not in ('sua', OTHER):
-                room['gates'][str(ask['gate'])] = {'at': stamp, 'choice': choice, 'askId': ask_id}
+                for gate in [ask['gate'], *ask.get('alsoGates', [])]:
+                    room['gates'][str(gate)] = {'at': stamp, 'choice': choice, 'askId': ask_id}
             self.save(room, 'ask_resolved', {'askId': ask_id, 'via': via, 'choice': choice, 'note': note})
             return ask
 
@@ -244,11 +245,11 @@ class Company:
             room, ask = self.find_item(ask_id, 'asks', 'a')
             if ask['status'] != 'resolved':
                 raise UserError('Câu hỏi đang mở, không cần mở lại: ' + ask_id)
-            if ask['gate'] is not None:
-                gate = room['gates'].get(str(ask['gate']))
+            for number in ([ask['gate'], *ask.get('alsoGates', [])] if ask['gate'] is not None else []):
+                gate = room['gates'].get(str(number))
                 # Chỉ gỡ khi cổng do chính ask này ghi; ask sau đã duyệt lại thì giữ.
                 if gate and gate.get('askId') == ask_id:
-                    room['gates'][str(ask['gate'])] = None
+                    room['gates'][str(number)] = None
             previous = ask['choice']
             ask.update(status='open', choice=None, note=None, answeredVia=None, resolvedAt=None)
             self.save(room, 'ask_reopened', {'askId': ask_id, 'note': note, 'previousChoice': previous})
@@ -371,6 +372,8 @@ class Company:
             elif command == 'ask':
                 if a.kind == 'duyet' and a.gate is None:
                     raise UserError('Câu hỏi duyệt cần --gate 1–6.')
+                if a.also_gate and a.gate is None:
+                    raise UserError('--also-gate cần đi kèm --gate (cổng chính).')
                 options = a.option or [(option['key'], option['label'])
                                        for option in effective_options({'kind': a.kind, 'options': []})]
                 if a.kind == 'quyet':
@@ -389,7 +392,8 @@ class Company:
                     raise UserError('--recommend phải khớp một phương án.')
                 number = max((int(ask['id'].rsplit('-a', 1)[1]) for ask in room['asks']), default=0) + 1
                 ask = {'id': room['key'] + '-a' + str(number), 'room': room['key'], 'kind': a.kind,
-                       'gate': a.gate, 'title': a.title, 'context': a.context,
+                       'gate': a.gate, 'alsoGates': sorted(set(a.also_gate) - {a.gate}),
+                       'title': a.title, 'context': a.context,
                        'options': [{'key': key, 'label': label} for key, label in options],
                        'recommend': a.recommend, 'links': a.link, 'status': 'open', 'choice': None,
                        'note': None, 'answeredVia': None, 'createdAt': now(), 'resolvedAt': None}
@@ -519,6 +523,8 @@ def parser():
     add.add_argument('key')
     add.add_argument('--kind', required=True, choices=('duyet', 'quyet', 'thaotac'))
     add.add_argument('--gate', type=int, choices=range(1, 7))
+    add.add_argument('--also-gate', type=int, choices=range(1, 7), action='append', default=[],
+                     help='cổng ghi kèm khi duyệt (ví dụ check cuối 5 gộp với cho gộp 6)')
     add.add_argument('--title', required=True, type=nonempty)
     add.add_argument('--context', default='')
     add.add_argument('--option', action='append', type=pair, default=[])

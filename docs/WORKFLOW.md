@@ -34,9 +34,9 @@ Manager quyết phòng cần vai nào (việc chỉ server thì không có Desig
 | 6 | **Code** (`code`): dev server + dev web, test trong code. Phòng có Designer: lane dev web chỉ mở sau cổng 3 (`lane add` chặn; `--force-gate` khi anh đồng ý ngoại lệ) | Dev | |
 | 7 | **Test** (`test`): QA test app thật (giữ chìa khoá app) ⇒ vòng lỗi | QA ↔ Dev | chỉ lỗi cần quyết hành vi |
 | 8 | **Review** (`review`): lane mới, sửa hết 🔴 | Review ↔ Dev | |
-| 9 | **Check cuối** (`cho-check`): báo cáo QA + kết luận review nguyên văn | Manager | ✅ **Cổng 5** |
+| 9 | (Check cuối không còn là bước riêng — gộp vào bước 11, cổng 5 + 6 một lần duyệt) | | |
 | 10 | **Chuẩn bị gộp** (`chuan-bi-gop`): rebase `main`, đổi số migration nếu trùng, `make check` | Manager | |
-| 11 | **Chờ gộp** (`cho-gop`): Thư ký chạy lại `make check`, so số | Thư ký | ✅ **Cổng 6** |
+| 11 | **Check cuối + cho gộp** (`cho-gop`): báo cáo QA + kết luận review + số test; Thư ký chạy lại `make check` MỘT lần trên SHA đã rebase | Manager, Thư ký | ✅ **Cổng 5 + 6 gộp** (một lần duyệt). Rebase có xung đột lớn ⇒ tách lại hai cổng |
 | 12 | **Xong** (`xong`): `merge --ff-only` vào `main`, push, `room done`, dọn worktree | Manager | |
 
 ## Sáu cổng duyệt

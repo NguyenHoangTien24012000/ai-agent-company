@@ -1,6 +1,6 @@
 ---
 name: phong-qa
-description: Việc của lane QA trong một phòng của công ty agent SportsHub — viết kế hoạch test từ "Luật luôn đúng" trước khi dev code, test khám phá trên app thật bằng plugin Playwright (ma trận cỡ màn, ngôn ngữ, theme, nhiều tài khoản), báo lỗi bằng `company.py bug add`, test lại rồi đóng lỗi, viết báo cáo HTML. Dùng khi brief lane qa (`.scratch/<key>/briefs/qa.md`) trỏ tới skill này. Chỉ báo lỗi, không sửa code.
+description: Việc của lane QA trong một phòng của công ty agent SportsHub — viết kế hoạch test từ "Luật luôn đúng" trước khi dev code, test khám phá trên app thật bằng plugin Playwright (ma trận cỡ màn, ngôn ngữ, theme, nhiều tài khoản), báo lỗi bằng `company.py bug add`, test lại rồi đóng lỗi, viết báo cáo markdown. Dùng khi brief lane qa (`.scratch/<key>/briefs/qa.md`) trỏ tới skill này. Chỉ báo lỗi, không sửa code.
 ---
 
 # QA phòng
@@ -14,7 +14,11 @@ CO=~/sportshub-company; C="python3 $CO/bin/company.py"; KEY=<KEY>; k=<key>; R=.s
 ## Lượt `ke-hoach` — viết `$R/qa-plan.md` TRƯỚC khi dev code
 
 Nguồn: `docs/features/<tên>.md` mục "Luật luôn đúng", `$R/spec.md`, `$R/techlead.md` (endpoint, mã lỗi).
-Mỗi luật ≥ ba ca:
+
+⛔ **Gọn** (Sếp duyệt 13/10 — một đợt từng có 180–450 dòng kế hoạch mỗi phòng, QA giữ chìa khoá app 30–45 phút):
+kế hoạch chạy tay **tối đa ~50 ca, chỉ P0**: luật luôn đúng, quyền, tiền, luồng chính, và màn mới ở 3 cỡ. Thứ test tự
+động (unit/integration của dev) đã phủ thì KHÔNG chép thành ca tay — ghi một dòng "đã phủ bởi <file test>".
+Mỗi luật quan trọng ≥ ba ca:
 
 | Mã ca | Luật | Loại | Ai (tài khoản) | Dựng dữ liệu | Bước | Mong đợi (màn + mã lỗi C14) |
 |---|---|---|---|---|---|---|
@@ -60,7 +64,7 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
       --steps "<tài khoản · dữ liệu · bước 1..n · thấy gì · mong đợi gì · console>" --shot $R/qa/shots/<…>.png --by qa
    ```
    Lỗi mà "đúng" hay "sai" còn tuỳ cách hiểu luật ⇒ thêm `--needs-boss`, ghi rõ hai cách hiểu. Không tự quyết.
-5. Hết lượt: tắt ĐÚNG app của worktree mình rồi trả chìa khoá (chỉ khi mình đang giữ), viết báo cáo HTML, `LANE-DONE qa`:
+5. Hết lượt: tắt ĐÚNG app của worktree mình rồi trả chìa khoá (chỉ khi mình đang giữ), viết báo cáo markdown, `LANE-DONE qa`:
    ```bash
    make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này
    $C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
@@ -97,8 +101,9 @@ $C bug set <ID> --status fixing --note "vẫn lỗi: <thấy gì>" --by qa      
 ```
 Chỉ QA được đóng, và chỉ sau khi tự chạy lại.
 
-## Báo cáo `$R/qa-report.html`
+## Báo cáo `$R/qa-report.md`
 
-Một file HTML tĩnh, mở bằng file://, không CDN: ngày, commit (`git rev-parse --short HEAD`), bảng ca × kết quả ✅/❌,
-ma trận đã chạy, danh sách lỗi (id, trạng thái), ảnh nhúng bằng đường dẫn tương đối `qa/shots/…`. Mỗi lượt test
-ghi đè; bản cũ dời sang `qa-report-<n>.html`. Báo cáo lane `$R/reports/qa.md` tóm tắt số ca chạy/đạt/lỗi và id lỗi.
+Markdown ngắn (≤ 60 dòng): ngày, commit (`git rev-parse --short HEAD`), số ca chạy/đạt/lỗi theo nhóm, ma trận đã chạy,
+danh sách lỗi (id, trạng thái), kết luận 4 mức. Ảnh để ở `qa/shots/`, link đường dẫn tương đối — chỉ ảnh của ca ❌.
+Mỗi lượt ghi đè. Báo cáo lane `$R/reports/qa.md` là 5 dòng tóm tắt + id lỗi.
+

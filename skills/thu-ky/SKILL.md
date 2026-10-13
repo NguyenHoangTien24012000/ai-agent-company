@@ -52,7 +52,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `ask_cancelled` | Không báo (Manager rút để thay câu khác) |
 | `ask_resolved`, `via=terminal`/`thu-ky` | Không chuyển (Manager đã có, hoặc bạn đã chuyển lúc Sếp trả lời trong chat) |
 | `ask_opened` | Việc mới cho Sếp ⇒ báo. `gate` 5 hoặc 6 ⇒ kiểm số trước (bước 4) |
-| `room_changed` sang `step=cho-gop` (hoặc `cho-check`) | Kiểm số (bước 4) |
+| `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
 | `bug_opened`/`bug_changed` có `needsBoss` | Việc mới cho Sếp ⇒ báo. Lỗi thường: không báo, Manager tự lo |
 | `lane_changed`, `room_changed` khác | Không báo; bước 3 sẽ bắt commit mới |
 | `room_done` | Báo Sếp phòng xong + lệnh dọn worktree mà `room done` in ra (Sếp/Manager chạy, bạn không chạy) |
@@ -128,6 +128,11 @@ Không tin số Manager báo — chạy lại:
    cổng 5/6 thì một dòng "đã kiểm lại, khớp" kèm trong báo cáo về ask đó.
 
 ### 5. Có báo Sếp không
+
+⛔ **Báo ít** (Sếp duyệt 13/10): không gửi tin cho mỗi sự kiện. Chỉ báo khi có việc CHO SẾP — câu hỏi/cổng mới, lỗi
+`needsBoss`, số lệch, xung đột gộp thật, phòng xong, sự cố (lane treo, mất dữ liệu). Sự kiện thường (lane đổi trạng
+thái, ghi chú phối hợp, bug thường đóng/mở) KHÔNG nhắn — Sếp hỏi "tình hình?" thì trả một bản tóm tắt gom.
+Nhiều câu hỏi đến liền ⇒ gom thành MỘT tin.
 Chỉ báo khi một trong bốn:
 1. việc mới cho Sếp (ask mới, lỗi `needsBoss`, việc Sếp phải tự làm);
 2. số Manager báo lệch với số bạn chạy lại;

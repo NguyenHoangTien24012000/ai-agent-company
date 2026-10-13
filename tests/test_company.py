@@ -161,6 +161,18 @@ class CompanyTests(unittest.TestCase):
         gate = self.data('room', 'show', 'ATTEND')['gates']['2']
         self.assertEqual((gate['askId'], gate['choice']), (second, 'b'))
 
+    def test_one_ask_can_pass_gates_5_and_6_together(self):
+        # Sếp duyệt check cuối và cho gộp trong MỘT lần khi rebase sạch.
+        ask = self.data('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '6', '--also-gate', '5', '--title', 'Check cuối + gộp')
+        self.assertEqual(ask['alsoGates'], [5])
+        self.run_cli('ask', 'resolve', ask['id'], '--choice', 'ok', '--via', 'board')
+        gates = self.data('room', 'show', 'ATTEND')['gates']
+        self.assertEqual((gates['5']['askId'], gates['6']['askId']), (ask['id'], ask['id']))
+        self.run_cli('ask', 'reopen', ask['id'])
+        gates = self.data('room', 'show', 'ATTEND')['gates']
+        self.assertEqual((gates['5'], gates['6']), (None, None))
+        self.run_cli('ask', 'add', 'ATTEND', '--kind', 'duyet', '--also-gate', '5', '--title', 'Thiếu cổng chính', code=2)
+
     def test_cancel_open_ask(self):
         ask = self.data('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Hỏi',
                         '--option', 'a=A', '--option', 'b=B')
