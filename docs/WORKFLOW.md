@@ -58,8 +58,8 @@ Manager hỏi **trong terminal của nó** rồi dừng lượt (Orca báo anh),
 Anh chọn một trong ba:
 
 1. **Gõ thẳng trong terminal Manager.** Manager ghi câu trả lời lên board (`ask resolve --via terminal`) rồi làm tiếp.
-2. **Bấm nút trên board** (cần board server): server ghi `via=board` ⇒ Thư ký thức ⇒ gửi
-   `Sếp trả lời <ID> (<tiêu đề>): <lựa chọn> — <ghi chú>` vào terminal Manager. Không có server ⇒ nút chép câu
+2. **Bấm nút trên board** (cần board server): server ghi `via=board` rồi **tự gửi** ngay
+   `Sếp trả lời <ID> (<tiêu đề>): <lựa chọn> — <ghi chú>` vào terminal Manager (gửi lỗi ⇒ sự kiện `forward_failed`, Thư ký chuyển tay). Không có server ⇒ nút chép câu
    `company.py ask resolve <ID> --choice <k> --via board`; anh dán vào terminal Manager.
 3. **Nói với Thư ký** trong chat (ví dụ "ATTEND-a3 ok, nhớ thêm cột ghi chú"): Thư ký ghi `--via thu-ky` rồi chuyển.
 
@@ -116,7 +116,7 @@ python3 bin/company.py room list [--all]          python3 bin/company.py room sh
 python3 bin/company.py ask list --open            python3 bin/company.py ask resolve ID --choice ok --via thu-ky
 python3 bin/company.py key status
 python3 bin/company.py room done KEY              # in lệnh dọn worktree, không tự chạy
-bin/wait-event.sh --timeout 14400                 # Thư ký chạy nền, không lọc
+bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note   # Thư ký chạy nền
 bin/wait-event.sh --room KEY                      # Manager chạy nền
 ```
 

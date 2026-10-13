@@ -22,6 +22,7 @@ git -C "$REPO" add a.txt b.txt; git -C "$REPO" commit -qm base
 
 LOG="$TMP/calls.log"; : > "$LOG"
 WTROOT="$TMP/workspaces"
+export ORCA_WORKSPACES="$WTROOT"   # không đụng worktree của phòng thật đang chạy
 
 # company.py giả: ghi lại mọi lệnh; room show lỗi nếu chưa room new; snapshot đọc $TMP/snapshot.json.
 FAKE_CO="$TMP/company.py"

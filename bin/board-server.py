@@ -4,13 +4,46 @@
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
+import threading
 from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from company import Company, UserError
+from company import Company, UserError, effective_options
+
+ORCA = os.environ.get('ORCA', '/Applications/Orca.app/Contents/Resources/bin/orca')
+
+
+def answer_text(ask):
+    label = next((option['label'] for option in effective_options(ask) if option['key'] == ask['choice']), '')
+    text = f"Sếp trả lời {ask['id']} ({ask['title']}): {ask['choice']} — {label}"
+    if (ask.get('note') or '').strip():
+        text += ' — Ghi chú: ' + ask['note'].strip()
+    return text
+
+
+def forward_answer(company, ask, orca=None):
+    """Gửi câu trả lời Sếp bấm trên board vào terminal Manager — việc Thư ký từng phải thức dậy làm tay.
+    Không gửi được thì ghi sự kiện forward_failed để Thư ký xử lý; trả (ok, chi tiết)."""
+    handle = company.room(ask['room']).get('managerTerminal') or ''
+    if not handle:
+        # Handle rỗng: Orca gõ vào terminal KHÁC mà vẫn báo thành công — tuyệt đối không gọi.
+        detail = 'phòng chưa có managerTerminal'
+    else:
+        try:
+            result = subprocess.run([orca or ORCA, 'terminal', 'send', '--terminal', handle, '--text', answer_text(ask),
+                                     '--enter', '--wait-submit', '15'], capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                return True, result.stdout.strip()
+            detail = (result.stderr or result.stdout).strip()[:500] or f'exit {result.returncode}'
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            detail = str(exc)[:500]
+    company.forward_failed(ask['id'], detail)
+    return False, detail
 
 
 class BoardHandler(BaseHTTPRequestHandler):
@@ -79,11 +112,16 @@ class BoardHandler(BaseHTTPRequestHandler):
             self.send_json(500, {'ok': False, 'error': 'Không ghi được trạng thái.'})
             return
         self.send_json(200, {'ok': True, 'ask': ask})
+        forward = getattr(self.server, 'forward', None)
+        if forward:
+            forward(ask)
 
 
 def make_server(port=8765, root=None):
     server = ThreadingHTTPServer(('127.0.0.1', port), BoardHandler)
     server.company = Company(root)
+    # Chạy ở luồng riêng: Orca chờ terminal nhận phím tới 15 giây, nút trên board không phải đợi theo.
+    server.forward = lambda ask: threading.Thread(target=forward_answer, args=(server.company, ask), daemon=True).start()
     return server
 
 

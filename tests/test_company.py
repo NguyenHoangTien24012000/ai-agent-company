@@ -90,7 +90,8 @@ class CompanyTests(unittest.TestCase):
                     ('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '7', '--title', 'Sai'),
                     ('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '1', '--title', 'Sai', '--option', 'no=Không'),
                     ('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Sai', '--option', 'a=A', '--option', 'a=B'),
-                    ('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Sai', '--recommend', 'missing')]
+                    ('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Sai', '--option', 'a=A', '--option', 'b=B',
+                     '--recommend', 'missing')]
         for command in commands:
             with self.subTest(command=command):
                 result = self.run_cli(*command, code=2)
@@ -124,6 +125,89 @@ class CompanyTests(unittest.TestCase):
         self.run_cli('ask', 'resolve', 'ATTEND-a4', '--choice', 'done')
         self.assertEqual(self.data('ask', 'list', '--open'), [])
         self.assertEqual(len(self.data('ask', 'list')), 4)
+
+    def test_decision_asks_need_options_and_get_an_other_choice(self):
+        # Sếp muốn chọn bằng một cú bấm: câu quyết định phải có phương án, "Khác" là lối thoát duy nhất phải gõ.
+        before = self.events()
+        for options in ([], ['--option', 'a=Một phương án']):
+            with self.subTest(options=options):
+                result = self.run_cli('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Hỏi', *options, code=2)
+                self.assertIn('2 phương án', result.stderr)
+        self.assertEqual(before, self.events())
+        ask = self.data('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Ai chốt có mặt?',
+                        '--option', 'a=Đội trưởng', '--option', 'b=Ai cũng chốt được', '--recommend', 'a')
+        self.assertEqual([(item['key'], item['label']) for item in ask['options']],
+                         [('a', 'Đội trưởng'), ('b', 'Ai cũng chốt được'), ('khac', 'Khác — tự viết')])
+        chore = self.data('ask', 'add', 'ATTEND', '--kind', 'thaotac', '--title', 'Bật Docker')
+        self.assertEqual([item['key'] for item in chore['options']], ['done'])
+        for note in ([], ['--note', '   ']):
+            with self.subTest(note=note):
+                result = self.run_cli('ask', 'resolve', ask['id'], '--choice', 'khac', *note, code=2)
+                self.assertIn('ghi chú', result.stderr)
+        self.run_cli('ask', 'resolve', ask['id'], '--choice', 'khac', '--note', 'Phó đội cũng chốt được')
+        self.run_cli('ask', 'resolve', chore['id'], '--choice', 'done')
+        self.assertEqual(self.data('ask', 'list', '--open'), [])
+
+    def test_gate_choice_question_records_gate_for_concrete_option(self):
+        # Cổng 2 là câu chọn hướng (a/b/c), không có 'ok': chọn một hướng cụ thể vẫn là qua cổng.
+        def gate_ask():
+            return self.data('ask', 'add', 'ATTEND', '--kind', 'quyet', '--gate', '2', '--title', 'Chọn hướng',
+                             '--option', 'a=Hướng 1', '--option', 'b=Hướng 2')['id']
+        first = gate_ask()
+        self.run_cli('ask', 'resolve', first, '--choice', 'khac', '--note', 'Hướng khác hẳn')
+        self.assertIsNone(self.data('room', 'show', 'ATTEND')['gates']['2'])
+        second = gate_ask()
+        self.run_cli('ask', 'resolve', second, '--choice', 'b', '--via', 'board')
+        gate = self.data('room', 'show', 'ATTEND')['gates']['2']
+        self.assertEqual((gate['askId'], gate['choice']), (second, 'b'))
+
+    def test_cancel_open_ask(self):
+        ask = self.data('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Hỏi',
+                        '--option', 'a=A', '--option', 'b=B')
+        self.run_cli('ask', 'cancel', ask['id'], '--note', 'Thay bằng ATTEND-a2')
+        self.assertEqual(self.data('ask', 'list', '--open'), [])
+        self.assertEqual(self.board()['myQueue'], [])
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['askId'], event['note']), ('ask_cancelled', ask['id'], 'Thay bằng ATTEND-a2'))
+        self.run_cli('ask', 'cancel', ask['id'], code=2)                   # đã rút thì thôi
+        self.run_cli('ask', 'resolve', ask['id'], '--choice', 'a', code=2)
+
+    def test_legacy_ask_without_options_shows_default_button_on_board(self):
+        # Ask ghi trước bản sửa có options rỗng trong state; board và resolve vẫn phải dùng được.
+        self.run_cli('ask', 'add', 'ATTEND', '--kind', 'quyet', '--title', 'Cũ', '--option', 'a=A', '--option', 'b=B')
+        path = self.root / 'state/rooms/ATTEND.json'
+        room = json.loads(path.read_text()); room['asks'][0]['options'] = []
+        path.write_text(json.dumps(room))
+        queue = self.data('snapshot')['myQueue']
+        self.assertEqual([item['key'] for item in queue[0]['options']], ['tra-loi'])
+        self.assertEqual(json.loads(path.read_text())['asks'][0]['options'], [])
+        self.run_cli('ask', 'resolve', 'ATTEND-a1', '--choice', 'tra-loi', code=2)
+        self.run_cli('ask', 'resolve', 'ATTEND-a1', '--choice', 'tra-loi', '--note', 'Trả lời')
+
+    def test_reopen_ask_after_mistaken_answer(self):
+        ask_id = self.run_cli('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '1', '--title', 'Duyệt').stdout.strip()
+        self.run_cli('ask', 'reopen', ask_id, code=2)                      # đang mở thì không mở lại
+        self.run_cli('ask', 'resolve', ask_id, '--choice', 'ok', '--via', 'board')
+        self.assertIsNotNone(self.data('room', 'show', 'ATTEND')['gates']['1'])
+        self.run_cli('ask', 'reopen', ask_id, '--note', 'Sếp bấm nhầm')
+        room = self.data('room', 'show', 'ATTEND')
+        self.assertIsNone(room['gates']['1'])                              # bấm nhầm không được coi là đã duyệt
+        ask = room['asks'][0]
+        self.assertEqual((ask['status'], ask['choice'], ask['note'], ask['answeredVia'], ask['resolvedAt']),
+                         ('open', None, None, None, None))
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['askId'], event['note'], event['previousChoice']),
+                         ('ask_reopened', ask_id, 'Sếp bấm nhầm', 'ok'))
+        self.assertEqual([item['id'] for item in self.board()['myQueue']], [ask_id])
+        self.run_cli('ask', 'reopen', 'ATTEND-a9', code=2)
+
+    def test_reopen_keeps_gate_recorded_by_a_later_ask(self):
+        first = self.run_cli('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '2', '--title', 'Bản 1').stdout.strip()
+        self.run_cli('ask', 'resolve', first, '--choice', 'sua', '--note', 'Sửa màu')
+        second = self.run_cli('ask', 'add', 'ATTEND', '--kind', 'duyet', '--gate', '2', '--title', 'Bản 2').stdout.strip()
+        self.run_cli('ask', 'resolve', second, '--choice', 'ok')
+        self.run_cli('ask', 'reopen', first)
+        self.assertEqual(self.data('room', 'show', 'ATTEND')['gates']['2']['askId'], second)
 
     def test_lane_lifecycle(self):
         lane = self.data('lane', 'add', 'ATTEND', '--role', 'qa', '--handle', 'term_qa', '--model', 'opus')
@@ -214,7 +298,7 @@ class CompanyTests(unittest.TestCase):
     def test_twenty_concurrent_writers_preserve_ids_and_events(self):
         def write(index):
             return subprocess.run([sys.executable, str(CLI), 'ask', 'add', 'ATTEND', '--kind', 'quyet',
-                                   '--title', str(index), '--option', 'ok=OK'], env=self.env,
+                                   '--title', str(index), '--option', 'ok=OK', '--option', 'no=Không'], env=self.env,
                                   text=True, capture_output=True, timeout=20)
         with ThreadPoolExecutor(max_workers=20) as executor:
             results = list(executor.map(write, range(20)))

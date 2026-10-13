@@ -8,6 +8,7 @@
 #   SPORTSHUB_CO    gốc ~/sportshub-company     SPORTSHUB_REPO  repo SportsHub
 #   ORCA            đường dẫn Orca CLI          COMPANY_PY      đường dẫn company.py
 #   MANAGER_WAIT    số giây chờ Manager hiện lên màn hình (mặc định 60)
+#   ORCA_WORKSPACES thư mục Orca đặt worktree (mặc định /Users/tien/orca/workspaces/sportshub)
 # Exit: 0 xong · 2 sai tham số / điều kiện trước · 3 Orca/git lỗi · 4 Manager không xác nhận được.
 set -euo pipefail
 
@@ -42,7 +43,8 @@ IDEA="${POS[2]:-}"
 
 KEY_LOWER="$(printf '%s' "$KEY" | tr '[:upper:]' '[:lower:]')"
 BRANCH="phong/$KEY_LOWER"
-WT_EXPECTED="/Users/tien/orca/workspaces/sportshub/$KEY_LOWER"
+# Thư mục Orca đặt worktree; test trỏ sang thư mục tạm để không đụng phòng thật đang chạy.
+WT_EXPECTED="${ORCA_WORKSPACES:-/Users/tien/orca/workspaces/sportshub}/$KEY_LOWER"
 
 # Bọc chuỗi trong nháy đơn cho shell (an toàn cả với tiếng Việt, ký tự đặc biệt).
 sq() { local s=${1//\'/\'\\\'\'}; printf "'%s'" "$s"; }

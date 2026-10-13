@@ -11,6 +11,7 @@ import selectors
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -29,12 +30,15 @@ class ServerTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.root = Path(cls.temporary.name)
-        cls.env = dict(os.environ, SPORTSHUB_CO=str(cls.root), PYTHONDONTWRITEBYTECODE='1')
+        # ORCA giả: server thật trong test KHÔNG BAO GIỜ được gõ vào terminal Orca thật.
+        cls.env = dict(os.environ, SPORTSHUB_CO=str(cls.root), PYTHONDONTWRITEBYTECODE='1', ORCA='/usr/bin/false')
         (cls.root / 'board.html').write_text('<!doctype html><h1>Board thử</h1>')
         subprocess.run([sys.executable, str(REPO / 'bin/company.py'), 'room', 'new', 'ATTEND', '--title', 'Thử'],
                        env=cls.env, capture_output=True, check=True, timeout=10)
         cls.port = 8765
         cls.server = SimpleNamespace(company=SERVER.Company(cls.root), server_address=('127.0.0.1', cls.port))
+        cls.forwarded = []
+        cls.server.forward = cls.forwarded.append
 
     def ask(self):
         result = subprocess.run([sys.executable, str(REPO / 'bin/company.py'), 'ask', 'add', 'ATTEND',
@@ -126,6 +130,74 @@ class ServerTests(unittest.TestCase):
                              ('ask_resolved', 'board', 'ok', 'Đồng ý'))
             self.assertEqual(self.answer({'askId': ask_id, 'choice': 'ok'})[0], 400)
 
+    def test_other_choice_needs_a_note_from_board(self):
+        result = subprocess.run([sys.executable, str(REPO / 'bin/company.py'), 'ask', 'add', 'ATTEND', '--kind', 'quyet',
+                                 '--title', 'Hỏi', '--option', 'a=A', '--option', 'b=B'], env=self.env, text=True, capture_output=True, check=True,
+                                timeout=10)
+        ask_id = result.stdout.strip()
+        for note in (None, '', '  '):
+            with self.subTest(note=note):
+                status, _, payload = self.answer({'askId': ask_id, 'choice': 'khac', 'note': note})
+                self.assertEqual(status, 400, payload)
+        status, _, payload = self.answer({'askId': ask_id, 'choice': 'khac', 'note': 'Chốt sau trận'})
+        self.assertEqual(status, 200, payload)
+
+    def test_board_answer_is_handed_to_forwarder(self):
+        # Sếp bấm trên board ⇒ server tự chuyển cho Manager, không chờ Thư ký thức dậy.
+        ask_id = self.ask()
+        self.forwarded.clear()
+        status, _, payload = self.answer({'askId': ask_id, 'choice': 'ok', 'note': 'Đồng ý'})
+        self.assertEqual(status, 200, payload)
+        self.assertEqual([(ask['id'], ask['choice']) for ask in self.forwarded], [(ask_id, 'ok')])
+        self.answer({'askId': ask_id, 'choice': 'ok'})                    # trả lời lại bị từ chối ⇒ không chuyển
+        self.assertEqual(len(self.forwarded), 1)
+
+    def fake_orca(self, code=0):
+        log = self.root / 'orca.log'
+        script = self.root / f'orca-{code}.sh'
+        script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {log}\necho input_accepted\nexit {code}\n')
+        script.chmod(0o755)
+        return str(script), log
+
+    def resolved_ask(self, terminal):
+        path = self.root / 'state/rooms/ATTEND.json'
+        room = json.loads(path.read_text())
+        room['managerTerminal'] = terminal or None
+        path.write_text(json.dumps(room))
+        result = subprocess.run([sys.executable, str(REPO / 'bin/company.py'), 'ask', 'add', 'ATTEND', '--kind', 'quyet',
+                                 '--title', 'Ai chốt?', '--option', 'a=Đội trưởng', '--option', 'b=Ai cũng được'],
+                                env=self.env, text=True, capture_output=True, check=True, timeout=10)
+        return self.server.company.resolve_ask(result.stdout.strip(), 'khac', 'Phó đội cũng chốt', via='board')
+
+    def events(self):
+        return [json.loads(line) for line in (self.root / 'state/events.jsonl').read_text().splitlines()]
+
+    def test_forward_sends_exact_answer_to_manager_terminal(self):
+        orca, log = self.fake_orca()
+        ask = self.resolved_ask('term_manager')
+        ok, _ = SERVER.forward_answer(self.server.company, ask, orca)
+        self.assertTrue(ok)
+        args = log.read_text().splitlines()
+        self.assertEqual(args[:4], ['terminal', 'send', '--terminal', 'term_manager'])
+        self.assertEqual(args[5], f"Sếp trả lời {ask['id']} (Ai chốt?): khac — Khác — tự viết — Ghi chú: Phó đội cũng chốt")
+        self.assertIn('--enter', args)
+        self.assertNotEqual(self.events()[-1]['type'], 'forward_failed')
+
+    def test_forward_failure_is_recorded_for_thu_ky(self):
+        orca, _ = self.fake_orca(code=3)
+        ask = self.resolved_ask('term_manager')
+        self.assertFalse(SERVER.forward_answer(self.server.company, ask, orca)[0])
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['askId']), ('forward_failed', ask['id']))
+        # Handle rỗng: Orca sẽ gõ nhầm vào terminal khác mà vẫn báo thành công ⇒ không được gọi Orca.
+        orca, log = self.fake_orca()
+        log.unlink(missing_ok=True)
+        ask = self.resolved_ask('')
+        self.assertFalse(SERVER.forward_answer(self.server.company, ask, orca)[0])
+        self.assertFalse(log.exists())
+        self.assertEqual(self.events()[-1]['type'], 'forward_failed')
+        self.assertFalse(SERVER.forward_answer(self.server.company, ask, str(self.root / 'khong-co-orca'))[0])
+
     def test_invalid_body_and_choice(self):
         ask_id = self.ask()
         for value in [[], {}, {'askId': ask_id}, {'askId': ask_id, 'choice': []},
@@ -165,6 +237,21 @@ class LiveServerTests(ServerTests):
                 raise unittest.SkipTest('Sandbox chặn bind TCP localhost; các test handler vẫn chạy đầy đủ.')
             raise RuntimeError('Server không khởi động: ' + error)
         cls.port = int(line.rsplit(':', 1)[1])
+
+    def test_board_answer_is_handed_to_forwarder(self):
+        # Server thật dùng ORCA=/usr/bin/false ⇒ chuyển thất bại ⇒ phải để lại forward_failed cho Thư ký.
+        path = self.root / 'state/rooms/ATTEND.json'
+        room = json.loads(path.read_text())
+        room['managerTerminal'] = 'term_test'
+        path.write_text(json.dumps(room))
+        ask_id = self.ask()
+        self.assertEqual(self.answer({'askId': ask_id, 'choice': 'ok'})[0], 200)
+        for _ in range(50):
+            failed = [e for e in self.events() if e['type'] == 'forward_failed' and e['askId'] == ask_id]
+            if failed:
+                break
+            time.sleep(0.1)
+        self.assertTrue(failed)
 
     def request(self, method, path, body=None, headers=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)

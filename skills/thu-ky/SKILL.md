@@ -15,6 +15,7 @@ báo đụng file giữa các phòng, và chỉ làm phiền Sếp khi đáng. M
 - **Không viết code tính năng, không sửa file trong worktree phòng.** Đọc, `git log/diff`, chạy test để kiểm là được.
 - **Không duyệt thay Sếp.** Chỉ `ask resolve` khi chính Sếp trả lời trong chat này (`--via thu-ky`). Im lặng không bao giờ là đồng ý.
 - **Không commit, push, merge, rebase** gì trong repo SportsHub (`/Users/tien/Claude/sportshub` và mọi worktree). Gộp là việc của Manager sau cổng 6.
+- Sửa `bin/company.py` hay `bin/board-server.py` ⇒ nhắc Sếp khởi động lại board server: tiến trình đang chạy giữ code cũ (13/10: lỗi ghi cổng còn nguyên vì quên bước này).
 - Ghi state CHỈ qua `bin/company.py`. Không sửa tay `state/*.json`, `events.jsonl`, `data/board.js`.
 - **Trước mọi `orca terminal send`: kiểm handle khác rỗng.** Handle rỗng ⇒ Orca gõ vào terminal KHÁC và vẫn báo thành công.
 - Không có nhịp dự phòng 30': bạn chỉ thức khi có sự kiện. Không tự đặt `/loop`, cron hay ScheduleWakeup.
@@ -45,7 +46,9 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 
 | Sự kiện | Làm gì |
 |---|---|
-| `ask_resolved`, `via=board` | **Chuyển cho Manager** (bước 2) |
+| `ask_resolved`, `via=board` | Board server **đã tự chuyển** vào terminal Manager (từ 13/10). Không làm gì — watcher cũng không đánh thức vì loại này |
+| `forward_failed` | Board không chuyển được (Orca lỗi / phòng mất `managerTerminal`) ⇒ **chuyển tay** (bước 2), xem `detail` |
+| `ask_cancelled` | Không báo (Manager rút để thay câu khác) |
 | `ask_resolved`, `via=terminal`/`thu-ky` | Không chuyển (Manager đã có, hoặc bạn đã chuyển lúc Sếp trả lời trong chat) |
 | `ask_opened` | Việc mới cho Sếp ⇒ báo. `gate` 5 hoặc 6 ⇒ kiểm số trước (bước 4) |
 | `room_changed` sang `step=cho-gop` (hoặc `cho-check`) | Kiểm số (bước 4) |
@@ -58,7 +61,8 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `key_taken` / `key_released` không `handedTo` | Không báo |
 | `room_opened` | Không báo (bạn mở, hoặc Sếp đã biết) |
 
-### 2. Chuyển câu trả lời từ board vào terminal Manager
+### 2. Chuyển tay câu trả lời từ board vào terminal Manager (chỉ khi `forward_failed`)
+Bình thường board server tự gửi đúng câu dưới đây ngay khi Sếp bấm. Thư ký chỉ làm tay khi có sự kiện `forward_failed`.
 Lấy ask và handle từ snapshot (ID ở trường `askId` của sự kiện):
 ```bash
 $C snapshot | python3 -c '
@@ -76,6 +80,11 @@ $ORCA terminal read --terminal "$H" --screen --limit 20      # thấy câu vừa
 Không có note ⇒ bỏ phần ` — <note>`. `managerTerminal` null ⇒ báo Sếp: phòng mất terminal Manager, đề xuất mở lại
 (`$ORCA terminal create --worktree path:<wt> --command "claude --model opus --effort high --permission-mode bypassPermissions '/phong-manager <KEY>'"`, rồi `$C room set KEY --manager-terminal <h>`).
 Manager tự bỏ qua câu trùng (ask đã resolved), nên gửi lại khi nghi ngờ là an toàn hơn bỏ sót.
+
+**Sếp bấm nhầm** ("tôi ấn nhầm", "bấm nhầm X"): xác định đúng ask (mơ hồ ⇒ hỏi lại), rồi
+`$C ask reopen <ID> --note "Sếp bấm nhầm"` — ask hiện lại ở "Việc của anh", cổng nó đã ghi (nếu có) bị gỡ. Gửi Manager
+(kiểm handle): `Thư ký: Sếp bấm nhầm <ID>, đã mở lại trên board (cổng nếu có đã gỡ). Bỏ câu trả lời trước, chờ Sếp trả lời lại.`
+Đừng bảo Manager tạo ask mới — trùng câu hỏi trên board.
 
 **Sếp trả lời ngay trong chat này** (ví dụ "ATTEND-a3 ok", "duyệt cổng 2 ATTEND"): `$C ask resolve <ID> --choice <k> [--note "…"] --via thu-ky`,
 rồi chuyển y như trên. Mơ hồ ask nào/choice nào ⇒ hỏi lại Sếp, không đoán.
@@ -130,9 +139,9 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 ### 6. Arm lại watcher (cuối MỌI vòng)
 1. `wc -l < state/events.jsonl` so với dấu; có dòng mới đến trong lúc làm ⇒ xử lý chúng trước.
 2. Ghi dấu: `wc -l < state/events.jsonl | tr -d ' ' > state/thu-ky.processed`
-3. Bash `run_in_background: true`, KHÔNG lọc:
+3. Bash `run_in_background: true`, chỉ thức vì sự kiện cần phán đoán (lane đổi trạng thái, câu trả lời board đã tự chuyển, ask rút/mở lại thì không):
    ```bash
-   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400
+   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note
    ```
    Exit 0 in các dòng mới ⇒ vòng tiếp. Exit 2 = hết 4 giờ ⇒ arm lại, không báo.
 4. Mỗi lúc một watcher. Không bao giờ kết thúc lượt mà không có nó.
@@ -151,6 +160,7 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 ```bash
 $C room list [--all]            $C room show KEY [--json]        $C ask list --open [--room KEY]
 $C ask resolve ID --choice k --note "…" --via thu-ky
+$C ask reopen ID --note "Sếp bấm nhầm"
 $C key status                   $C note KEY "…"                  $C snapshot
 $C overlap KEY --with OTHER --files a,b [--conflict]             # overlap.sh lo việc này
 $C evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch

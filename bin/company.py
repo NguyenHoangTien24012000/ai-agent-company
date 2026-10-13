@@ -19,6 +19,21 @@ STEPS = ('hoi-dap', 'cho-goi', 'thiet-ke', 'kien-truc', 'ke-hoach-test',
          'code', 'test', 'review', 'cho-check', 'chuan-bi-gop', 'cho-gop', 'xong')
 ROLES = ['designer', 'techlead', 'dev-server', 'dev-web', 'qa', 'review']
 VIA = ('terminal', 'board', 'thu-ky')
+OPEN_ANSWER = 'tra-loi'   # câu hỏi mở kiểu cũ (ask ghi trước khi bắt buộc phương án)
+OTHER = 'khac'            # 'Khác — tự viết': Sếp thấy không phương án nào ổn thì mới gõ
+NOTE_CHOICES = (OPEN_ANSWER, OTHER)
+
+
+def effective_options(ask):
+    """Phương án thật của một ask. Ask không ghi phương án vẫn phải có nút trên board:
+    câu hỏi mở ⇒ gửi câu trả lời (bắt buộc ghi chú), việc Sếp tự làm ⇒ báo đã xong."""
+    if ask['options']:
+        return ask['options']
+    if ask['kind'] == 'duyet':
+        return [{'key': 'ok', 'label': 'Duyệt'}, {'key': 'sua', 'label': 'Cần sửa'}]
+    if ask['kind'] == 'thaotac':
+        return [{'key': 'done', 'label': 'Đã làm xong'}]
+    return [{'key': OPEN_ANSWER, 'label': 'Gửi câu trả lời'}]
 BUG_TRANSITIONS = {'open': {'fixing'}, 'fixing': {'retest'},
                    'retest': {'fixing', 'closed'}, 'closed': set()}
 
@@ -136,7 +151,7 @@ class Company:
         visible.sort(key=lambda room: (room['status'] != 'active', room['createdAt'], room['key']))
         queue = []
         for room in rooms:
-            queue.extend(ask for ask in room['asks'] if ask['status'] == 'open')
+            queue.extend(dict(ask, options=effective_options(ask)) for ask in room['asks'] if ask['status'] == 'open')
             queue.extend(bug for bug in room['bugs'] if bug['needsBoss'] and bug['status'] != 'closed')
         queue.sort(key=lambda item: (item['createdAt'], item['id']))
         events_path = self.state / 'events.jsonl'
@@ -192,20 +207,61 @@ class Company:
             room, ask = self.find_item(ask_id, 'asks', 'a')
             if ask['status'] != 'open':
                 raise UserError('Câu hỏi đã được trả lời: ' + ask_id)
-            if ask['options'] and choice not in [option['key'] for option in ask['options']]:
-                raise UserError('choice phải khớp một phương án.')
+            keys = [option['key'] for option in effective_options(ask)]
+            if choice not in keys:
+                raise UserError('choice phải khớp một phương án: ' + ', '.join(keys))
+            if choice in NOTE_CHOICES and not (note or '').strip():
+                raise UserError('Phương án này cần câu trả lời trong ghi chú — gõ vào ô ghi chú rồi mới gửi.')
             stamp = now()
             ask.update(status='resolved', choice=choice, note=note, answeredVia=via, resolvedAt=stamp)
-            if ask['gate'] is not None and choice == 'ok':
+            # Qua cổng = chọn một phương án cụ thể: 'ok' của câu duyệt, hay hướng a/b/c của cổng 2.
+            # 'sua' (cần sửa) và 'khac' (Sếp tự viết hướng khác) thì Manager phải trình lại.
+            if ask['gate'] is not None and choice not in ('sua', OTHER):
                 room['gates'][str(ask['gate'])] = {'at': stamp, 'choice': choice, 'askId': ask_id}
             self.save(room, 'ask_resolved', {'askId': ask_id, 'via': via, 'choice': choice, 'note': note})
             return ask
+
+    def reopen_ask(self, ask_id, note=None):
+        """Sếp bấm nhầm: đưa câu hỏi về trạng thái mở, gỡ cổng mà chính câu trả lời đó đã ghi."""
+        with self.lock():
+            room, ask = self.find_item(ask_id, 'asks', 'a')
+            if ask['status'] != 'resolved':
+                raise UserError('Câu hỏi đang mở, không cần mở lại: ' + ask_id)
+            if ask['gate'] is not None:
+                gate = room['gates'].get(str(ask['gate']))
+                # Chỉ gỡ khi cổng do chính ask này ghi; ask sau đã duyệt lại thì giữ.
+                if gate and gate.get('askId') == ask_id:
+                    room['gates'][str(ask['gate'])] = None
+            previous = ask['choice']
+            ask.update(status='open', choice=None, note=None, answeredVia=None, resolvedAt=None)
+            self.save(room, 'ask_reopened', {'askId': ask_id, 'note': note, 'previousChoice': previous})
+            return ask
+
+    def cancel_ask(self, ask_id, note=None):
+        """Manager rút câu hỏi chưa ai trả lời (ví dụ thay câu hỏi mở bằng câu có phương án)."""
+        with self.lock():
+            room, ask = self.find_item(ask_id, 'asks', 'a')
+            if ask['status'] != 'open':
+                raise UserError('Chỉ rút được câu hỏi đang mở: ' + ask_id)
+            ask.update(status='cancelled', note=note, resolvedAt=now())
+            self.save(room, 'ask_cancelled', {'askId': ask_id, 'note': note})
+            return ask
+
+    def forward_failed(self, ask_id, detail):
+        """Board không chuyển được câu trả lời vào terminal Manager ⇒ để lại sự kiện cho Thư ký xử lý tay."""
+        with self.lock():
+            room, _ = self.find_item(ask_id, 'asks', 'a')
+            self.save(room, 'forward_failed', {'askId': ask_id, 'detail': detail})
 
     def execute(self, args):
         if args.command == 'snapshot':
             return self.snapshot()
         if args.command == 'ask' and args.action == 'resolve':
             return self.resolve_ask(args.id, args.choice, args.note, args.via)
+        if args.command == 'ask' and args.action == 'reopen':
+            return self.reopen_ask(args.id, args.note)
+        if args.command == 'ask' and args.action == 'cancel':
+            return self.cancel_ask(args.id, args.note)
         with self.lock():
             return self._execute(args)
 
@@ -288,7 +344,15 @@ class Company:
             elif command == 'ask':
                 if a.kind == 'duyet' and a.gate is None:
                     raise UserError('Câu hỏi duyệt cần --gate 1–6.')
-                options = a.option or ([('ok', 'Duyệt'), ('sua', 'Cần sửa')] if a.kind == 'duyet' else [])
+                options = a.option or [(option['key'], option['label'])
+                                       for option in effective_options({'kind': a.kind, 'options': []})]
+                if a.kind == 'quyet':
+                    # Sếp chọn bằng một cú bấm; chỉ gõ khi không phương án nào ổn.
+                    if len([key for key, _ in a.option if key != OTHER]) < 2:
+                        raise UserError('Câu quyết định cần ít nhất 2 phương án (--option k="…"), kèm --recommend. '
+                                        'Mỗi câu hỏi một ask; CLI tự thêm phương án "Khác — tự viết".')
+                    if OTHER not in [key for key, _ in options]:
+                        options = options + [(OTHER, 'Khác — tự viết')]
                 keys = [key for key, _ in options]
                 if len(set(keys)) != len(keys):
                     raise UserError('Khoá phương án không được trùng.')
@@ -417,7 +481,10 @@ def parser():
     add.add_argument('--model', default=None, type=nonempty)
     setting.add_argument('--status', required=True, choices=('running', 'waiting', 'done', 'closed'))
     setting.add_argument('--note')
-    add, resolve, listing = group('ask', ['add', 'resolve', 'list'])
+    add, resolve, reopen, cancel, listing = group('ask', ['add', 'resolve', 'reopen', 'cancel', 'list'])
+    for sub in (reopen, cancel):
+        sub.add_argument('id')
+        sub.add_argument('--note')
     add.add_argument('key')
     add.add_argument('--kind', required=True, choices=('duyet', 'quyet', 'thaotac'))
     add.add_argument('--gate', type=int, choices=range(1, 7))

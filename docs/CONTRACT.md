@@ -82,14 +82,27 @@ Designer và Techlead chạy song song nên nút 2–4 KHÔNG là bước riêng
   "options": [ {"key":"ok","label":"Duyệt"}, {"key":"sua","label":"Cần sửa (ghi chú)"} ],
   "recommend": "ok",
   "links": ["docs/features/attend.md"],
-  "status": "open",                                       // open | resolved
+  "status": "open",                                       // open | resolved | cancelled
   "choice": null, "note": null,
   "answeredVia": null,                                    // terminal | board | thu-ky
   "createdAt": "…", "resolvedAt": null }
 ```
 
-id = `<KEY>-a<n>`, n tăng dần trong phòng. Resolve một ask có `gate` với choice `ok` ⇒ ghi `gates[gate]`.
-Choice khác `ok` không ghi gate. Ask kind `duyet` luôn có option `ok`.
+id = `<KEY>-a<n>`, n tăng dần trong phòng. Resolve một ask có `gate` với một phương án cụ thể (`ok`, hay hướng
+`a`/`b`/… của cổng 2) ⇒ ghi `gates[gate]`. Choice `sua` hoặc `khac` không ghi gate (Manager trình lại). Ask kind `duyet` luôn có option `ok`.
+
+**Sếp chọn bằng một cú bấm, chỉ gõ khi không phương án nào ổn** (chốt 12/10/2026):
+- `quyet` **bắt buộc ≥ 2 `--option`** (CLI từ chối nếu thiếu), nên kèm `--recommend`. Một ask = một câu hỏi.
+  CLI tự thêm phương án `khac` ("Khác — tự viết").
+- `duyet` không ghi `--option` ⇒ `ok`/`sua`. `thaotac` ⇒ `done` ("Đã làm xong").
+- Choice `khac` (và `tra-loi` của ask cũ) **bắt buộc có note không trống** — CLI và server từ chối, board chặn trước.
+- Ask cũ lưu `options: []`: `quyet` được hiểu là `tra-loi` ("Gửi câu trả lời"), để còn trả lời được.
+
+`ask cancel ID [--note]`: Manager rút ask đang mở (ví dụ thay câu hỏi mở bằng câu có phương án) ⇒ `status: cancelled`,
+khỏi "Việc của anh", sự kiện `ask_cancelled`.
+
+`ask reopen ID` (Sếp bấm nhầm): ask `resolved` ⇒ `open`, xoá choice/note/answeredVia/resolvedAt; nếu `gates[gate]`
+do chính ask này ghi thì gỡ về `null` (cổng do ask sau ghi thì giữ). Sự kiện `ask_reopened` mang `previousChoice`.
 
 ### BUG
 
@@ -124,7 +137,7 @@ Chìa khoá app: chỉ một phòng được chạy app thật (DB 5432, server 
 
 Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. Loại:
 
-`room_opened` · `room_changed` (step/links/roles…) · `room_done` · `lane_changed` · `ask_opened` · `ask_resolved`
+`room_opened` · `room_changed` (step/links/roles…) · `room_done` · `lane_changed` · `ask_opened` · `ask_resolved` · `ask_reopened` · `ask_cancelled` · `forward_failed`
 (có `via`, `choice`, `note`) · `bug_opened` · `bug_changed` (có `status`, `assignee`) · `key_requested` · `key_taken` · `key_released` (có `handedTo`) ·
 `overlap` · `evidence` · `note`
 
@@ -143,6 +156,8 @@ lane set KEY --handle H --status running|waiting|done|closed [--note N]
 ask add KEY --kind duyet|quyet|thaotac [--gate N] --title T [--context C] [--option k=label]... [--recommend k] [--link L]...
             # in ra id. kind=duyet mà không có --option ⇒ mặc định ok=Duyệt, sua=Cần sửa
 ask resolve ID --choice k [--note N] [--via terminal|board|thu-ky]
+ask reopen ID [--note N]                                  # Sếp bấm nhầm; chỉ Thư ký chạy, theo lời Sếp
+ask cancel ID [--note N]                                  # Manager rút ask chưa ai trả lời
 ask list [--open] [--room KEY]
 bug add KEY --title T --area server|web [--steps S] [--shot P]... [--severity high|normal] [--needs-boss] --by ROLE
 bug set ID [--status S] [--assignee R] [--note N] --by ROLE
@@ -170,6 +185,9 @@ snapshot                 # in JSON snapshot (giống data/board.js)
 - `POST /api/answer` body `{"askId","choice","note"}` → resolve với `via=board`. Chặn CSRF (kiểu tấn công lừa trình
   duyệt gửi lệnh thay bạn): bắt buộc `Content-Type: application/json` và header `X-Company: 1`; Origin nếu có phải là
   `http://127.0.0.1:<port>` hoặc `http://localhost:<port>`. Trả `{ok:true, ask}` hoặc `{ok:false, error}` + 4xx.
+  Ghi xong, server **tự chuyển** vào terminal Manager (luồng riêng, không làm chậm nút): `orca terminal send` câu
+  `Sếp trả lời <ID> (<title>): <choice> — <nhãn>[ — Ghi chú: <note>]`. Handle rỗng thì KHÔNG gọi Orca. Không chuyển được ⇒
+  sự kiện `forward_failed` `{askId, detail}` để Thư ký chuyển tay. Biến môi trường `ORCA` đổi đường dẫn Orca (test dùng chương trình giả).
 - `GET /api/health` → `{ok:true}`
 
 ## `bin/wait-event.sh`
