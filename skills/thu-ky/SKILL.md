@@ -55,7 +55,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
 | `bug_opened`/`bug_changed` có `needsBoss` | Việc mới cho Sếp ⇒ báo. Lỗi thường: không báo, Manager tự lo |
 | `lane_changed`, `room_changed` khác | Không báo; bước 3 sẽ bắt commit mới |
-| `room_done` | Báo Sếp phòng xong + lệnh dọn worktree mà `room done` in ra (Sếp/Manager chạy, bạn không chạy); retro xong ⇒ đóng phiên Manager |
+| `room_done` | Báo Sếp phòng xong. Retro xong ⇒ chép `retro.md` sang `state/retros/<KEY>.md`, đóng phiên Manager, rồi TỰ DỌN (Sếp chốt 14/10): kiểm nhánh đã vào `origin/main` và file chưa commit chỉ là đồ tạm `.scratch/` ⇒ `orca worktree rm --worktree path:<wt> --force`, `git worktree prune`, `git branch -D` nhánh phòng + nhánh dự phòng `backup/<key>-*`/`phong/<key>-truoc-rebase*`, `make qa-drop KEY=<key>` nếu DB còn. Nhánh CHƯA vào main ⇒ không dọn, báo Sếp |
 | `key_requested` | **Điều phối chìa khoá.** Nhắn Manager phòng `holder` (kiểm handle khác rỗng): `Thư ký: phòng <room> cần chìa khoá app (<reason>). Phòng bạn không chạy app nữa thì make stop rồi company.py key release <holder>; còn cần thì trả lời ước lượng bao lâu.` Không báo Sếp |
 | `key_released` có `handedTo` / `room_done`, `room_changed` có `keyHandedTo` | Nhắn Manager phòng được nhận: `Thư ký: phòng <X> đã có chìa khoá app, chạy app được.` Không báo Sếp |
 | Phòng giữ chìa khoá không trả lời / không nhả sau khi đã nhắn, và có phòng đang chờ | Báo Sếp: ai giữ bao lâu, ai chờ, đề xuất. Chỉ khi Sếp bảo thu hồi mới `company.py key release <holder> --note "Sếp thu hồi"` và nhắn phòng bị thu hồi dừng app |
