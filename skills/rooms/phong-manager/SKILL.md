@@ -171,7 +171,10 @@ lúc, 7 GB, máy còn ~70 MB trống). Mỗi lần một lane báo xong, Manager
 | Review | sau mỗi vòng có kết luận (vòng sau nên là phiên MỚI cho khách quan) |
 
 Đóng = `orca terminal close --terminal $H --tab` rồi `$C lane set $KEY --handle $H --status closed --note "<vì sao>"`.
-Giữ một lane `done` qua đêm phải có lý do ghi trong `--note`. Phiên Manager thì luôn giữ.
+⛔ **Phiên AI không dùng nữa thì đóng luôn** (Sếp chốt 14/10 — phiên treo làm cạn pin qua đêm). Lane `done` mà lượt tới
+chưa tới NGAY ⇒ đóng, mở lại sau rẻ hơn để treo. Phòng chờ Sếp (`cho-gop`, ask cổng) ⇒ không còn lane nào mở. Xem màn bằng Playwright
+xong (Manager hay lane) ⇒ gọi `browser_close` ngay, đừng để trình duyệt test mở chờ lượt sau. Đóng tab phiên là tắt luôn
+server Playwright của phiên đó. Phiên Manager giữ tới `room done`; sau đó Thư ký đóng.
 
 ## 6. Designer + Techlead song song → cổng 2, 3, 4
 

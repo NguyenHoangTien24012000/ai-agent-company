@@ -68,6 +68,7 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
 5. Hết lượt: tắt ĐÚNG app của worktree mình rồi trả chìa khoá (chỉ khi mình đang giữ), viết báo cáo markdown, `LANE-DONE qa`:
    ```bash
    make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này
+   # + gọi `browser_close` (tắt trình duyệt test) trước khi báo xong lượt
    $C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
    ```
 

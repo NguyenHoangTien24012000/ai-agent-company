@@ -55,7 +55,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
 | `bug_opened`/`bug_changed` có `needsBoss` | Việc mới cho Sếp ⇒ báo. Lỗi thường: không báo, Manager tự lo |
 | `lane_changed`, `room_changed` khác | Không báo; bước 3 sẽ bắt commit mới |
-| `room_done` | Báo Sếp phòng xong + lệnh dọn worktree mà `room done` in ra (Sếp/Manager chạy, bạn không chạy) |
+| `room_done` | Báo Sếp phòng xong + lệnh dọn worktree mà `room done` in ra (Sếp/Manager chạy, bạn không chạy); retro xong ⇒ đóng phiên Manager |
 | `key_requested` | **Điều phối chìa khoá.** Nhắn Manager phòng `holder` (kiểm handle khác rỗng): `Thư ký: phòng <room> cần chìa khoá app (<reason>). Phòng bạn không chạy app nữa thì make stop rồi company.py key release <holder>; còn cần thì trả lời ước lượng bao lâu.` Không báo Sếp |
 | `key_released` có `handedTo` / `room_done`, `room_changed` có `keyHandedTo` | Nhắn Manager phòng được nhận: `Thư ký: phòng <X> đã có chìa khoá app, chạy app được.` Không báo Sếp |
 | Phòng giữ chìa khoá không trả lời / không nhả sau khi đã nhắn, và có phòng đang chờ | Báo Sếp: ai giữ bao lâu, ai chờ, đề xuất. Chỉ khi Sếp bảo thu hồi mới `company.py key release <holder> --note "Sếp thu hồi"` và nhắn phòng bị thu hồi dừng app |
@@ -105,8 +105,10 @@ Chỉ ⚠️ đụng file mà gộp sạch ⇒ không báo, board đã hiện.
 ```bash
 ps -eo rss,command | grep -E "[c]laude |[c]odex" | awk '{s+=$1;n++} END{printf "%d phiên AI, %.1f GB\n", n, s/1048576}'
 ```
-Manager tự quyết đóng lane (skill `phong-manager`, "Vòng đời lane"). Thư ký chỉ nhắc khi một phòng còn lane `done`
-không ghi lý do giữ, hoặc tổng phiên AI vượt ~30 — nhắn Manager phòng đó, không tự đóng lane của phòng khác.
+⛔ **Phiên AI không dùng nữa thì đóng luôn** (Sếp chốt 14/10). Manager đóng lane của phòng mình (skill `phong-manager`,
+"Vòng đời lane"). Thư ký: (1) thấy phòng còn lane `done` hoặc phòng đang chờ Sếp mà còn lane mở ⇒ nhắn Manager đóng;
+(2) `room_done` ⇒ chờ Manager báo retro xong rồi TỰ đóng phiên Manager (`orca terminal close --terminal <h> --tab`);
+(3) không đụng phiên Claude/Codex của dự án khác ngoài công ty.
 
 ### 4. Kiểm số (phòng sang `cho-gop`/`cho-check`, hoặc ask cổng 5/6)
 Đọc log Manager, KHÔNG chạy lại mặc định (một lần `make check` trên bản cuối là đủ):
