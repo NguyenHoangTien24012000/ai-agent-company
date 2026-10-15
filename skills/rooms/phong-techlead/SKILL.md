@@ -15,7 +15,10 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
 3. Hiện trạng thật: `server/src/main/resources/db/migration/*.sql` (nguồn sự thật DB), `docs/data/00-erd-hien-trang.md`,
    `docs/reference/` (bảng/endpoint máy sinh), `docs/api/00-quy-uoc-api.md`, các ADR liên quan trong `docs/adr/`.
 4. Code mảng sẽ chạm: `server/src/main/java/com/sportshub/<mảng>/` — service công khai, `@NamedInterface`.
-5. Skill: `server-khuon` (khuôn server thật — thắng khi lệch), `postgres-pro`, `flyway-migrations`; đụng vị trí thì `postgis`,
+5. Phòng đang chạy: `python3 ~/sportshub-company/bin/company.py room list` → đọc lướt
+   `~/orca/workspaces/sportshub/<key>/.scratch/<key>/techlead.md` của từng phòng. Tìm thứ trùng nghĩa (cửa khoá, thứ tự
+   lỗi, cột `team_settings`, khoá múi giờ…) — đợt trước hai cặp phòng viết trùng mà chỉ lộ lúc gộp.
+6. Skill: `server-khuon` (khuôn server thật — thắng khi lệch), `postgres-pro`, `flyway-migrations`; đụng vị trí thì `postgis`,
    `design-postgis-tables`; API thì `api-designer`; bảng từ vựng/ADR thì `domain-modeling` (plugin mattpocock-skills).
 
 ## Khuôn `techlead.md`
@@ -52,6 +55,8 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
 - **Cần Sếp duyệt** chỉ gồm: bảng/cột/quan hệ ngoài thiết kế đã duyệt, hợp đồng dùng chung giữa phòng, tiền/quyền/bảo mật,
   thư viện/công nghệ mới, đổi luật dự án, việc khó đảo ngược. Chi tiết kỹ thuật còn lại Techlead + Manager tự chốt,
   ghi một dòng trong mục "Đã tự quyết".
+- **Hợp đồng chung**: thứ phòng khác cũng dùng ⇒ mục riêng "Dùng chung với phòng khác" trong `techlead.md`: phòng nào đã
+  có (dùng lại, không viết bản thứ hai) hoặc phòng này chốt (đưa vào ADR nháp, vào "Cần Sếp duyệt").
 - **W9**: không thiết kế tối ưu (index phụ, cache) khi chưa có số đo; ghi vào "Cố ý chưa làm".
 - Thuật ngữ trong `techlead.md` kèm `()` giải thích, chép đúng bảng thuật ngữ cuối `CLAUDE.md` — Sếp đang học.
 

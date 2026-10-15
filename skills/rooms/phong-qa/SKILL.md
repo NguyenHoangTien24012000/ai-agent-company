@@ -8,7 +8,7 @@ description: Việc của lane QA trong một phòng của công ty agent Sports
 Bạn là người kiểm độc lập: **chỉ báo lỗi, không sửa** — kể cả lỗi một dòng. Brief lane của bạn đã chép luật cứng.
 
 ```bash
-CO=~/sportshub-company; C="python3 $CO/bin/company.py"; KEY=<KEY>; k=<key>; R=.scratch/$k
+CO=~/sportshub-company; C() { python3 $CO/bin/company.py "$@"; }; KEY=<KEY>; k=<key>; R=.scratch/$k
 ```
 
 ## Lượt `ke-hoach` — viết `$R/qa-plan.md` TRƯỚC khi dev code
@@ -35,8 +35,8 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
 
 1. **Chìa khoá app** — chỉ chạy app khi phòng mình giữ (cổng 8080/5173 vẫn dùng chung):
    ```bash
-   $C key status                       # phòng mình giữ ⇒ đi tiếp
-   $C key request $KEY --reason "QA"   # phòng khác giữ ⇒ đã xếp hàng: lane set waiting, báo cáo, DỪNG (Thư ký báo Manager khi tới lượt)
+   C key status                       # phòng mình giữ ⇒ đi tiếp
+   C key request $KEY --reason "QA"   # phòng khác giữ ⇒ đã xếp hàng: lane set waiting, báo cáo, DỪNG (Thư ký báo Manager khi tới lượt)
    make qa-up KEY=$k                   # gốc worktree phòng; Bash timeout ≥ 300000 ms (lần đầu còn biên dịch)
    DB=sportshub_${k//-/_}              # tên DB riêng của phòng — dùng cho dev-token.py ở bước 3
    ```
@@ -61,7 +61,7 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
    Claude in Chrome hay `chrome-devtools` (luật W13). Không thêm `@playwright/test` vào repo (đã vào backlog).
 4. **Báo lỗi** — mỗi lỗi một thẻ:
    ```bash
-   $C bug add $KEY --title "<ngắn, nói hành vi sai>" --area server|web --severity high|normal \
+   C bug add $KEY --title "<ngắn, nói hành vi sai>" --area server|web --severity high|normal \
       --steps "<tài khoản · dữ liệu · bước 1..n · thấy gì · mong đợi gì · console>" --shot $R/qa/shots/<…>.png --by qa
    ```
    Lỗi mà "đúng" hay "sai" còn tuỳ cách hiểu luật ⇒ thêm `--needs-boss`, ghi rõ hai cách hiểu. Không tự quyết.
@@ -69,7 +69,7 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
    ```bash
    make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này
    # + gọi `browser_close` (tắt trình duyệt test) trước khi báo xong lượt
-   $C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
+   C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
    ```
 
 ## Soát mỗi màn — ngoài các ca của kế hoạch
@@ -98,8 +98,8 @@ Kết luận cuối báo cáo, đúng một dòng: **ĐẠT** (0 lỗi mở) · 
 
 Giữ chìa khoá như trên. Chạy lại ĐÚNG bước trong thẻ (cùng tài khoản, cùng cỡ màn), cộng ca lân cận của cùng luật.
 ```bash
-$C bug set <ID> --status closed --note "test lại <mã ca> ở <cỡ/ngôn ngữ/theme>: đạt" --by qa
-$C bug set <ID> --status fixing --note "vẫn lỗi: <thấy gì>" --by qa      # còn lỗi ⇒ trả về fixing
+C bug set <ID> --status closed --note "test lại <mã ca> ở <cỡ/ngôn ngữ/theme>: đạt" --by qa
+C bug set <ID> --status fixing --note "vẫn lỗi: <thấy gì>" --by qa      # còn lỗi ⇒ trả về fixing
 ```
 Chỉ QA được đóng, và chỉ sau khi tự chạy lại.
 

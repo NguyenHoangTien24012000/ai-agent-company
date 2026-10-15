@@ -24,14 +24,14 @@ báo đụng file giữa các phòng, và chỉ làm phiền Sếp khi đáng. M
 ## Đường dẫn
 ```
 CO=/Users/tien/sportshub-company          REPO=/Users/tien/Claude/sportshub
-C="python3 $CO/bin/company.py"            ORCA=/Applications/Orca.app/Contents/Resources/bin/orca
+C() { python3 $CO/bin/company.py "$@"; }  ORCA=/Applications/Orca.app/Contents/Resources/bin/orca
 ```
 (Không dùng `/usr/local/bin/orca` — symlink hỏng.) Sự kiện: `$CO/state/events.jsonl`. Dấu đã đọc:
 `$CO/state/thu-ky.processed` (số dòng đã xử lý; thiếu file = 0).
 
 ## Khởi động (đầu phiên, sau /clear)
 1. Đọc skill này (đang đọc), lướt `docs/WORKFLOW.md` nếu cần nhắc luồng.
-2. `$C room list` và `$C ask list --open` ⇒ biết phòng nào đang chạy, câu nào chờ Sếp.
+2. `C room list` và `C ask list --open` ⇒ biết phòng nào đang chạy, câu nào chờ Sếp.
 3. Board server: `curl -s http://127.0.0.1:8765/api/health`. Không chạy ⇒ nhắc Sếp một dòng:
    `! python3 /Users/tien/sportshub-company/bin/board-server.py` (chạy trong một terminal Orca riêng; Sếp chạy, không phải bạn).
 4. Xử lý sự kiện dồn từ dấu (vòng bên dưới, bước 1), rồi arm watcher (bước 6).
@@ -55,7 +55,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
 | `bug_opened`/`bug_changed` có `needsBoss` | Việc mới cho Sếp ⇒ báo. Lỗi thường: không báo, Manager tự lo |
 | `lane_changed`, `room_changed` khác | Không báo; bước 3 sẽ bắt commit mới |
-| `room_done` | Báo Sếp phòng xong. Retro xong ⇒ chép `retro.md` sang `state/retros/<KEY>.md`, đóng phiên Manager, rồi TỰ DỌN (Sếp chốt 14/10): kiểm nhánh đã vào `origin/main` và file chưa commit chỉ là đồ tạm `.scratch/` ⇒ `orca worktree rm --worktree path:<wt> --force`, `git worktree prune`, `git branch -D` nhánh phòng + nhánh dự phòng `backup/<key>-*`/`phong/<key>-truoc-rebase*`, `make qa-drop KEY=<key>` nếu DB còn. Nhánh CHƯA vào main ⇒ không dọn, báo Sếp |
+| `room_done` | Báo Sếp phòng xong. Retro xong (thiếu `<wt>/.scratch/<key>/retro.md` ⇒ nhắn Manager viết, CHƯA dọn — LINEUP, RESULT từng mất retro vì dọn trước) ⇒ chép `retro.md` sang `state/retros/<KEY>.md`, đóng phiên Manager, rồi TỰ DỌN (Sếp chốt 14/10): kiểm nhánh đã vào `origin/main` và file chưa commit chỉ là đồ tạm `.scratch/` ⇒ `orca worktree rm --worktree path:<wt> --force`, `git worktree prune`, `git branch -D` nhánh phòng + nhánh dự phòng `backup/<key>-*`/`phong/<key>-truoc-rebase*`, `make qa-drop KEY=<key>` nếu DB còn. Nhánh CHƯA vào main ⇒ không dọn, báo Sếp |
 | `key_requested` | **Điều phối chìa khoá.** Nhắn Manager phòng `holder` (kiểm handle khác rỗng): `Thư ký: phòng <room> cần chìa khoá app (<reason>). Phòng bạn không chạy app nữa thì make stop rồi company.py key release <holder>; còn cần thì trả lời ước lượng bao lâu.` Không báo Sếp |
 | `key_released` có `handedTo` / `room_done`, `room_changed` có `keyHandedTo` | Nhắn Manager phòng được nhận: `Thư ký: phòng <X> đã có chìa khoá app, chạy app được.` Không báo Sếp |
 | Phòng giữ chìa khoá không trả lời / không nhả sau khi đã nhắn, và có phòng đang chờ | Báo Sếp: ai giữ bao lâu, ai chờ, đề xuất. Chỉ khi Sếp bảo thu hồi mới `company.py key release <holder> --note "Sếp thu hồi"` và nhắn phòng bị thu hồi dừng app |
@@ -68,7 +68,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 Bình thường board server tự gửi đúng câu dưới đây ngay khi Sếp bấm. Thư ký chỉ làm tay khi có sự kiện `forward_failed`.
 Lấy ask và handle từ snapshot (ID ở trường `askId` của sự kiện):
 ```bash
-$C snapshot | python3 -c '
+C snapshot | python3 -c '
 import json,sys; s=json.load(sys.stdin); want=sys.argv[1]
 for r in s["rooms"]:
     for a in r.get("asks",[]):
@@ -81,15 +81,15 @@ $ORCA terminal send --terminal "$H" --text "Sếp trả lời <ID> (<title>): <c
 $ORCA terminal read --terminal "$H" --screen --limit 20      # thấy câu vừa gửi trong khung chat là xong
 ```
 Không có note ⇒ bỏ phần ` — <note>`. `managerTerminal` null ⇒ báo Sếp: phòng mất terminal Manager, đề xuất mở lại
-(`$ORCA terminal create --worktree path:<wt> --command "claude --model opus --effort high --permission-mode bypassPermissions '/phong-manager <KEY>'"`, rồi `$C room set KEY --manager-terminal <h>`).
+(`$ORCA terminal create --worktree path:<wt> --command "claude --model opus --effort high --permission-mode bypassPermissions '/phong-manager <KEY>'"`, rồi `C room set KEY --manager-terminal <h>`).
 Manager tự bỏ qua câu trùng (ask đã resolved), nên gửi lại khi nghi ngờ là an toàn hơn bỏ sót.
 
 **Sếp bấm nhầm** ("tôi ấn nhầm", "bấm nhầm X"): xác định đúng ask (mơ hồ ⇒ hỏi lại), rồi
-`$C ask reopen <ID> --note "Sếp bấm nhầm"` — ask hiện lại ở "Việc của anh", cổng nó đã ghi (nếu có) bị gỡ. Gửi Manager
+`C ask reopen <ID> --note "Sếp bấm nhầm"` — ask hiện lại ở "Việc của anh", cổng nó đã ghi (nếu có) bị gỡ. Gửi Manager
 (kiểm handle): `Thư ký: Sếp bấm nhầm <ID>, đã mở lại trên board (cổng nếu có đã gỡ). Bỏ câu trả lời trước, chờ Sếp trả lời lại.`
 Đừng bảo Manager tạo ask mới — trùng câu hỏi trên board.
 
-**Sếp trả lời ngay trong chat này** (ví dụ "ATTEND-a3 ok", "duyệt cổng 2 ATTEND"): `$C ask resolve <ID> --choice <k> [--note "…"] --via thu-ky`,
+**Sếp trả lời ngay trong chat này** (ví dụ "ATTEND-a3 ok", "duyệt cổng 2 ATTEND"): `C ask resolve <ID> --choice <k> [--note "…"] --via thu-ky`,
 rồi chuyển y như trên. Mơ hồ ask nào/choice nào ⇒ hỏi lại Sếp, không đoán.
 
 ### 3. Đụng file giữa các phòng (mỗi vòng)
@@ -109,6 +109,9 @@ ps -eo rss,command | grep -E "[c]laude |[c]odex" | awk '{s+=$1;n++} END{printf "
 "Vòng đời lane"). Thư ký: (1) thấy phòng còn lane `done` hoặc phòng đang chờ Sếp mà còn lane mở ⇒ nhắn Manager đóng;
 (2) `room_done` ⇒ chờ Manager báo retro xong rồi TỰ đóng phiên Manager (`orca terminal close --terminal <h> --tab`);
 (3) không đụng phiên Claude/Codex của dự án khác ngoài công ty.
+(4) Không còn phòng nào chạy, hoặc Sếp chào cuối ngày ⇒ một dòng nhắc Sếp: số phiên AI đang mở (lệnh trên) và máy đang
+chạy pin hay cắm sạc (`pmset -g batt`). Orca giữ máy thức (`caffeinate`) — đêm 14/10 khoảng 26 phiên, pin 100% → 4%.
+Phiên dự án khác chỉ báo, Sếp tự đóng.
 
 ### 4. Kiểm số (phòng sang `cho-gop`/`cho-check`, hoặc ask cổng 5/6)
 Đọc log Manager, KHÔNG chạy lại mặc định (một lần `make check` trên bản cuối là đủ):
@@ -123,7 +126,7 @@ ps -eo rss,command | grep -E "[c]laude |[c]odex" | awk '{s+=$1;n++} END{printf "
 4. Đọc log: exit code, số test server (`Tests run: X, Failures: F, Errors: E` tổng của Maven), số test web (vitest `Tests  N passed`), build ok.
 5. Ghi:
    ```bash
-   $C evidence <KEY> --claim "make check xanh, server 212 test" --manager "212 pass @abc1234" \
+   C evidence <KEY> --claim "make check xanh, server 212 test" --manager "212 pass @abc1234" \
      --thu-ky "212 pass, exit 0 @abc1234" --cmd "make check" --ok        # hoặc --mismatch
    ```
    Lệch (SHA khác, số khác, đỏ, worktree bẩn) ⇒ `--mismatch` và báo Sếp. Khớp ⇒ không cần báo riêng; nếu đang có ask
@@ -166,7 +169,7 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 
 ## Mở phòng — Sếp chat "mở phòng: <ý tưởng>"
 1. Đặt KEY: chữ hoa/số/gạch ngang, 2–24 ký tự, ngắn và nói được việc (`ATTEND`, `TEAM-STATS`). Tiêu đề: một dòng tiếng Việt.
-   Trùng KEY đang có (`$C room list --all`) ⇒ chọn KEY khác.
+   Trùng KEY đang có (`C room list --all`) ⇒ chọn KEY khác.
 2. Xem trước: `bin/open-room.sh KEY "Tiêu đề" "ý tưởng nguyên văn của Sếp" --dry-run`.
 3. Chạy thật (bỏ `--dry-run`). Script: tạo worktree Orca từ `main`, nhánh `phong/<key>`, chép `.env.local`,
    `room new`, mở Manager (Claude Opus, `/phong-manager KEY …`), `room set --manager-terminal`, đọc màn hình xác nhận.
@@ -176,12 +179,12 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 
 ## Lệnh hay dùng
 ```bash
-$C room list [--all]            $C room show KEY [--json]        $C ask list --open [--room KEY]
-$C ask resolve ID --choice k --note "…" --via thu-ky
-$C ask reopen ID --note "Sếp bấm nhầm"
-$C key status                   $C note KEY "…"                  $C snapshot
-$C overlap KEY --with OTHER --files a,b [--conflict]             # overlap.sh lo việc này
-$C evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch
+C room list [--all]            C room show KEY [--json]        C ask list --open [--room KEY]
+C ask resolve ID --choice k --note "…" --via thu-ky
+C ask reopen ID --note "Sếp bấm nhầm"
+C key status                   C note KEY "…"                  C snapshot
+C overlap KEY --with OTHER --files a,b [--conflict]             # overlap.sh lo việc này
+C evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch
 $ORCA worktree ps --json        $ORCA terminal read --terminal <h> --screen --limit 40
 bin/open-room.sh KEY "Tiêu đề" ["ý tưởng"] [--dry-run]        bin/overlap.sh [--dry-run]
 ```

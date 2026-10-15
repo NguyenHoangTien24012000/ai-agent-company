@@ -100,7 +100,9 @@ Thiết kế, giao diện mẫu (`make lab`, 5174) và test (`make check`, Testc
 2. `make check > .scratch/<key>/check-<sha>.log` xanh ⇒ `room set --step cho-gop`, báo SHA + số test.
 3. Thư ký đọc log đó, đối chiếu SHA với HEAD + worktree sạch, ghi `evidence`. Chỉ chạy lại khi lệch hoặc log bất thường; lệch ⇒ báo anh.
 4. **Cổng 6** ⇒ `git merge --ff-only` vào `main`, push, `company.py room done KEY` (nhả chìa khoá, in lệnh dọn worktree).
-5. Hai phòng cùng xong: phòng được bấm cổng 6 trước gộp trước, phòng sau rebase lại và qua cổng 6 lần nữa.
+5. Hai phòng cùng xong: phòng được bấm cổng 6 trước gộp trước. Phòng sau rebase lại; rebase cơ học (chỉ số
+   migration/ADR, file máy sinh, hai phía cùng thêm dòng) + `make check` xanh ⇒ gộp luôn, không qua cổng 6 lần nữa
+   (Sếp chốt 15/10). Xung đột đổi logic hoặc check đỏ ⇒ qua cổng 6 lại.
 
 Trong nhánh phòng, Manager commit tự do. Gộp `main` và push luôn cần cổng 6.
 
