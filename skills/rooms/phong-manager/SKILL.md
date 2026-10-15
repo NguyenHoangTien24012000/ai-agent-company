@@ -50,6 +50,8 @@ phòng, thư viện mới hay bảng/cột. Manager tự phân loại; giữa ch
 
 ## 2. Hỏi đáp Sếp → spec + hồ sơ tính năng (step `hoi-dap`)
 
+- Ý tưởng có dòng `Đầu vào: docs/product/nghien-cuu/<chu-de>.html` ⇒ đọc báo cáo TRƯỚC; mục "Sếp đã chốt" là
+  quyết định, KHÔNG hỏi lại; phòng chỉ làm lát được giao, các lát sau ghi backlog.
 - ⛔ **Sếp chọn, không gõ** (chốt 12/10/2026): KHÔNG hỏi mở kiểu "Sếp hình dung thế nào?". Tự đọc ADR, hồ sơ
   tính năng, màn lab để đoán ý Sếp, rồi biến mỗi chỗ còn mơ hồ thành MỘT ask `--kind quyet` có 2–4 phương án cụ thể
   + `--recommend` (W4). CLI tự thêm "Khác — tự viết"; Sếp chỉ gõ khi chọn Khác.

@@ -37,6 +37,7 @@ Im lặng không bao giờ là đồng ý. Chi tiết: [`docs/WORKFLOW.md`](docs
 | `bin/open-room.sh` | Mở phòng: worktree + nhánh + terminal Manager (dùng Orca CLI) |
 | `bin/overlap.sh` | So file đổi giữa các phòng, báo xung đột gộp thật bằng `git merge-tree` |
 | `skills/thu-ky/` | Skill của Thư ký |
+| `skills/nghien-cuu/` | Bước 0 do Thư ký chạy: nghiên cứu ý tưởng lớn → báo cáo HTML → đầu vào cổng 1 |
 | `skills/rooms/` | Bản chép skill của Manager, Techlead, QA, Review và brief mẫu từng vai (gốc nằm trong repo SportsHub) |
 | `tests/` | Test CLI, server, open-room (`python3 -m unittest`, `bash tests/test_open_room.sh`) |
 

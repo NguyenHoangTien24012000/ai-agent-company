@@ -167,6 +167,9 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
    nhờ thấy tiến trình `wait-event.sh` không lọc `--room` — không cần thức định kỳ để báo còn sống.
 4. Mỗi lúc một watcher. Không bao giờ kết thúc lượt mà không có nó.
 
+## Nghiên cứu — Sếp nói "nghiên cứu …" hoặc nêu tính năng lớn
+Đọc và làm theo `$CO/skills/nghien-cuu/SKILL.md` (bước 0, trước khi mở phòng). Việc nhỏ đã rõ ⇒ mở phòng thẳng.
+
 ## Mở phòng — Sếp chat "mở phòng: <ý tưởng>"
 1. Đặt KEY: chữ hoa/số/gạch ngang, 2–24 ký tự, ngắn và nói được việc (`ATTEND`, `TEAM-STATS`). Tiêu đề: một dòng tiếng Việt.
    Trùng KEY đang có (`C room list --all`) ⇒ chọn KEY khác.
