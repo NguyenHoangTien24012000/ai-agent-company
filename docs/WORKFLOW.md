@@ -43,8 +43,8 @@ phòng, thư viện mới hay bảng/cột. Manager tự phân loại; giữa ch
 | 4 | **Thiết kế** (`thiet-ke`) ‖ **Kiến trúc** (`kien-truc`) chạy song song | Designer, Techlead | ✅ **Cổng 2, 3, 4** |
 | 5 | **Kế hoạch test** (`ke-hoach-test`) từ "Luật luôn đúng"; Manager duyệt | QA | |
 | 6 | **Code** (`code`): dev server + dev web, test trong code. Phòng có Designer: lane dev web chỉ mở sau cổng 3 (`lane add` chặn; `--force-gate` khi anh đồng ý ngoại lệ) | Dev | |
-| 7 | **Test** (`test`): QA test app thật (giữ chìa khoá app) ⇒ vòng lỗi | QA ↔ Dev | chỉ lỗi cần quyết hành vi |
-| 8 | **Review** (`review`): lane mới, sửa hết 🔴 | Review ↔ Dev | |
+| 7 | **Test** (`test`) ‖ **Review** chạy song song ngay khi code xong: QA test app thật (giữ chìa khoá app), Review lane mới đọc diff ⇒ chung một vòng lỗi, sửa hết 🔴 | QA, Review ↔ Dev | chỉ lỗi cần quyết hành vi |
+| 8 | (Review không còn là bước riêng — chạy song song ở bước 7, Sếp chốt 16/10) | | |
 | 9 | (Check cuối không còn là bước riêng — gộp vào bước 11, cổng 5 + 6 một lần duyệt) | | |
 | 10 | **Chuẩn bị gộp** (`chuan-bi-gop`): rebase `main`, đổi số migration nếu trùng, `make check` | Manager | |
 | 11 | **Check cuối + cho gộp** (`cho-gop`): báo cáo QA + kết luận review + số test; Thư ký đọc log `check-<sha>.log` của Manager, chỉ chạy lại khi SHA lệch/log bất thường | Manager, Thư ký | ✅ **Cổng 5 + 6 gộp** (một lần duyệt). Rebase có xung đột lớn ⇒ tách lại hai cổng |
@@ -65,7 +65,7 @@ Duyệt (`ok`) ghi vào `gates` của phòng. Chọn khác (`sua` + ghi chú) �
 
 ## Cách anh trả lời — ở đâu cũng được
 
-Manager hỏi **trong terminal của nó** rồi dừng lượt (Orca báo anh), đồng thời ghi câu hỏi lên board (`ask`).
+Manager hỏi **trong terminal của nó** rồi dừng lượt (Orca báo anh), đồng thời ghi câu hỏi lên board (`ask`). Mỗi câu ghi `Chặn: <phần việc>`; trước khi dừng, Manager giao các lane phần việc không phụ thuộc câu đó (Sếp chốt 16/10).
 Anh chọn một trong ba:
 
 1. **Gõ thẳng trong terminal Manager.** Manager ghi câu trả lời lên board (`ask resolve --via terminal`) rồi làm tiếp.

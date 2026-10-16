@@ -87,6 +87,12 @@ Thư ký báo `Sếp bấm nhầm <ID>, đã mở lại` ⇒ bỏ câu trả l�
 
 Rồi in **y nguyên** câu đó trong terminal, kèm id, các lựa chọn, khuyến nghị (W4), và dừng lượt.
 
+⛔ **Câu hỏi chỉ chặn phần nó liên quan** (Sếp chốt 16/10 — đợt trước phòng có câu chờ Sếp 18–32 giờ, cả phòng đứng):
+dòng đầu `--context` ghi `Chặn: <phần việc/lane>` (ví dụ `Chặn: dev-web, chữ nút xác nhận`). TRƯỚC khi dừng lượt,
+giao việc không phụ thuộc câu đó cho các lane đang rảnh (dev-server làm phần đã chốt, QA viết ca, Designer sửa màn
+khác…) và ghi trong brief "chưa đụng <phần bị chặn>". Chỉ cho lane chờ khi MỌI việc còn lại đều phụ thuộc câu hỏi.
+Cổng 3 và cổng 4 vẫn chặn đúng như mục 6 (dev-web chờ cổng 3, mọi migration/dependency chờ cổng 4).
+
 Nhận câu trả lời (Sếp gõ ở đây, hoặc dòng `Sếp trả lời <ID> …` do Thư ký chuyển từ board) ⇒ việc ĐẦU TIÊN:
 
 ```bash
@@ -239,9 +245,11 @@ Lượt test của QA: QA tự `key request`/`qa-up`/`qa-down`/`release` theo `p
 Thiết kế, lab, test Testcontainers không cần chìa khoá. Lab chạy cổng riêng của phòng và báo
 `C note $KEY "đang chạy lab <cổng>"`; hai phòng không dùng chung một cổng lab.
 
-## 10. Review
+## 10. Review — song song với QA
 
-Mở lane MỚI `review` (Claude opus, skill `phong-review`), không dùng lại lane Techlead. Đọc `$R/review.md`.
+Dev báo xong code (hết bước `code`) ⇒ mở lane MỚI `review` (Claude opus, skill `phong-review`) NGAY, cùng lúc QA test
+trên app (mục 8) — không chờ QA xong (Sếp chốt 16/10). Không dùng lại lane Techlead. Đọc `$R/review.md`.
+Lỗi của QA và 🔴 của Review đi chung một hàng sửa cho dev; bản sửa sau đó Review chỉ soi phần sửa (mục 13).
 Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lane review soi lại diff mới). Hết 🔴 và QA xong ⇒
 `C room set $KEY --link qaReport=$R/qa-report.md --link review=$R/review.md` rồi sang ngay mục 11 — KHÔNG trình
 cổng 5 riêng (cổng 5 + 6 gộp một lần duyệt, Sếp duyệt 13/10).
