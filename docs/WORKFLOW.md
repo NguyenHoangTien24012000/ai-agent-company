@@ -9,18 +9,36 @@ trên board. **Im lặng không bao giờ là đồng ý.**
 
 ## Vai
 
-| Ai | Làm gì | Model | Ở đâu |
+| Ai | Làm gì | Model (mức suy nghĩ) | Ở đâu |
 |---|---|---|---|
 | **Anh (Sếp)** | Quyết phạm vi, duyệt thiết kế, check cuối, cho gộp | — | Board + terminal Orca |
-| **Thư ký** | Mở phòng, chuyển câu trả lời từ board, chạy lại test kiểm số, báo đụng file | Opus | Phiên Claude ở `~/sportshub-company` |
-| **Manager** | Hỏi đáp anh, viết hồ sơ, chia lane, quản lỗi, gộp sau cổng 6 | Opus | Terminal chính của phòng, skill `phong-manager` |
-| **Designer** | 3 ý tưởng → giao diện mẫu (`web/src/lab`) → `nghiem-thu.html` | Codex `image_gen` → Claude | Lane Orca, skill `thiet-ke-man` |
-| **Techlead** | Cột/bảng, API, ADR, thư viện | Opus | Lane Orca, `phong-techlead` |
-| **Dev server / Dev web** | Code + test trong code | Codex / Sonnet | Lane Orca |
-| **QA** | Kế hoạch test trước, test app thật, báo lỗi (không sửa) | Sonnet | Lane Orca, `phong-qa` |
-| **Review** | Review cuối bằng lane MỚI (không dùng lại Techlead) | Opus | Lane Orca, `phong-review` |
+| **Thư ký** | Mở phòng, nghiên cứu bước 0, chuyển câu trả lời, kiểm số, board | Claude Opus 5.5 | Phiên Claude ở repo `sportshub` |
+| ↳ phiên phụ của Thư ký | Khảo sát thị trường, sửa công cụ công ty | Claude Opus 5.5 (kế thừa) | Subagent trong phiên Thư ký |
+| ↳ Codex nghiên cứu | Soi kiến trúc khi nghiên cứu, chỉ đọc | Codex `gpt-6-astra` (high) | `codex exec -s read-only` |
+| **Manager** | Hỏi đáp anh, viết hồ sơ, chia lane, quản lỗi, gộp sau cổng 6 | Claude Opus 5.5 (medium) | Terminal chính của phòng, skill `phong-manager` |
+| **Designer** | 3 ý tưởng → giao diện mẫu (`web/src/lab`) → `nghiem-thu.html` | Claude Opus 5.5 (high khi vẽ màn mới; sửa lab: medium) | Lane Orca, skill `thiet-ke-man` |
+| ↳ lane vẽ ảnh của Designer | Vẽ 3 hướng, tạo hình ảnh (`image_gen`) | Codex `gpt-6-astra` (high) | Lane Orca do Designer mở |
+| **Techlead** | Cột/bảng, API, ADR, thư viện | Claude Opus 5.5 (high) | Lane Orca, `phong-techlead` |
+| **Dev server** | Code máy chủ + test | Codex `gpt-6-astra` (high khi đụng tiền/quyền/giao dịch/đồng thời/migration; còn lại medium) | Lane Orca |
+| **Dev web** | Code giao diện + test | Codex `gpt-6.1-sol` (medium) | Lane Orca |
+| **QA** | Kế hoạch test trước, test app thật, báo lỗi (không sửa) | Claude Sonnet 5.5 (medium) | Lane Orca, `phong-qa` |
+| **Review** | Review bằng lane MỚI, song song QA | Claude Opus 5.5 (high) | Lane Orca, `phong-review` |
+
+Mức suy nghĩ (Sếp chốt 17/10): mặc định medium; high chỉ cho Techlead, Review, Designer vẽ màn mới và dev-server khi đụng tiền/quyền/giao dịch/đồng thời/migration. Luồng nhỏ: mọi vai medium trừ Review.
 
 Manager quyết phòng cần vai nào (việc chỉ server thì không có Designer) và trình trong gói phòng (cổng 1).
+
+## Board: bốn tab
+
+Dưới "Việc của anh" là hàng tab, mỗi tab có số đếm; board nhớ tab anh chọn lần trước (mặc định **Doing**).
+- **Backlog**: ý tưởng anh nêu nhưng chưa làm ngay. Gõ tiêu đề (và ghi chú nếu cần) vào ô đầu tab để thêm; nút
+  **→ Todo** khi anh cho làm; **Xoá…** hỏi lại ngay trong trang trước khi xoá.
+- **Todo**: việc anh đã cho làm, chờ Thư ký mở phòng. Mở phòng từ thẻ thì thẻ rời Todo và hiện thành phòng ở Doing.
+- **Doing**: các phòng đang chạy — thẻ phòng đầy đủ như trước (bước, cổng, lane, lỗi).
+- **Done**: phòng đã xong, mới nhất trước, mỗi phòng một dòng (KEY, tiêu đề, ngày xong, link **Retro** nếu có);
+  bấm một dòng để mở chi tiết.
+
+Anh cũng có thể chỉ nói với Thư ký ("ghi backlog: …", "cho làm T3"), Thư ký ghi thẻ hộ.
 
 ## Luồng nhỏ
 
@@ -122,6 +140,8 @@ hoặc phòng xong. Báo bằng tiếng Việt: vấn đề → phương án →
 ```bash
 # Anh chạy: bật board server + nhịp kiểm (heartbeat) nền nếu chưa chạy, rồi mở board
 ~/sportshub-company/bin/open-board.sh
+# Thẻ việc (Backlog/Todo)
+python3 ~/sportshub-company/bin/company.py task add --title "…" [--note "…"] [--column todo]
 open ~/sportshub-company/board.html              # không có server: board đọc data/board.js, reload để làm mới
 
 # Thư ký / Manager

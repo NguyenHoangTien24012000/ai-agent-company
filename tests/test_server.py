@@ -125,7 +125,8 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(value['ask']['answeredVia'], 'board')
             state = json.loads(self.request('GET', '/api/state')[2])
             self.assertEqual(state['rooms'][0]['gates']['1']['askId'], ask_id)
-            event = state['events'][0]
+            # Không lấy events[0]: luồng chuyển câu trả lời có thể ghi forward_failed chen lên trước.
+            event = next(e for e in state['events'] if e['type'] == 'ask_resolved' and e['askId'] == ask_id)
             self.assertEqual((event['type'], event['via'], event['choice'], event['note']),
                              ('ask_resolved', 'board', 'ok', 'Đồng ý'))
             self.assertEqual(self.answer({'askId': ask_id, 'choice': 'ok'})[0], 400)
@@ -198,6 +199,34 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.events()[-1]['type'], 'forward_failed')
         self.assertFalse(SERVER.forward_answer(self.server.company, ask, str(self.root / 'khong-co-orca'))[0])
 
+    def task_ask(self):
+        cli = [sys.executable, str(REPO / 'bin/company.py')]
+        task = json.loads(subprocess.run(cli + ['task', 'add', '--title', 'Phòng truyền thống', '--json'], env=self.env,
+                                         text=True, capture_output=True, check=True, timeout=10).stdout)
+        return subprocess.run(cli + ['ask', 'add', '--task', task['id'], '--kind', 'quyet', '--title', 'Ai ghi kỷ niệm?',
+                                     '--option', 'a=Đội trưởng', '--option', 'b=Mọi người'],
+                              env=self.env, text=True, capture_output=True, check=True, timeout=10).stdout.strip()
+
+    def test_task_question_answered_on_board_wakes_thu_ky_without_orca(self):
+        # Câu của thẻ chưa có phòng: không có Manager ⇒ không gọi Orca, không forward_failed; ghi task_ask_answered.
+        ask_id = self.task_ask()
+        state = json.loads(self.request('GET', '/api/state')[2])
+        self.assertIn(ask_id, [item['id'] for item in state['myQueue']])
+        status, _, payload = self.answer({'askId': ask_id, 'choice': 'khac', 'note': ''})
+        self.assertEqual(status, 400, payload)
+        status, _, payload = self.answer({'askId': ask_id, 'choice': 'khac', 'note': 'Thủ quỹ ghi'})
+        self.assertEqual(status, 200, payload)
+        ask = json.loads(payload)['ask']
+        self.assertEqual((ask['task'], ask['answeredVia'], ask['status']), (ask_id.split('-')[0], 'board', 'resolved'))
+        orca, log = self.fake_orca()
+        log.unlink(missing_ok=True)
+        self.assertTrue(SERVER.forward_answer(self.server.company, ask, orca)[0])
+        self.assertFalse(log.exists())
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['room'], event['task'], event['askId'], event['choice'], event['note']),
+                         ('task_ask_answered', None, ask['task'], ask_id, 'khac', 'Thủ quỹ ghi'))
+        self.assertNotIn(ask_id, [e.get('askId') for e in self.events() if e['type'] == 'forward_failed'])
+
     def test_invalid_body_and_choice(self):
         ask_id = self.ask()
         for value in [[], {}, {'askId': ask_id}, {'askId': ask_id, 'choice': []},
@@ -210,6 +239,62 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/answer', '{bad',
                                      {'Content-Type': 'application/json', 'X-Company': '1'})[0], 400)
         self.assertEqual(self.request('POST', '/missing', '{}')[0], 404)
+
+    def task(self, value, headers=None):
+        status, _, payload = self.request('POST', '/api/task', json.dumps(value), headers if headers is not None else
+                                          {'Content-Type': 'application/json', 'X-Company': '1'})
+        return status, json.loads(payload)
+
+    def test_task_buttons_add_move_edit_remove(self):
+        status, value = self.task({'action': 'add', 'title': 'Giao lưu đội', 'note': 'Hai đội', 'column': 'todo'})
+        self.assertEqual(status, 200, value)
+        task = value['task']
+        self.assertEqual((task['title'], task['note'], task['column'], task['room']), ('Giao lưu đội', 'Hai đội', 'todo', None))
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['taskId'], event['room']), ('task_added', task['id'], None))
+        status, value = self.task({'action': 'move', 'id': task['id'], 'column': 'backlog'})
+        self.assertEqual((status, value['task']['column']), (200, 'backlog'))
+        status, value = self.task({'action': 'edit', 'id': task['id'], 'title': 'Giao lưu'})
+        self.assertEqual((status, value['task']['title']), (200, 'Giao lưu'))
+        state = json.loads(self.request('GET', '/api/state')[2])
+        self.assertIn(value['task'], state['tasks'])
+        status, value = self.task({'action': 'remove', 'id': task['id']})
+        self.assertEqual(status, 200, value)
+        self.assertEqual(self.events()[-1]['type'], 'task_removed')
+        state = json.loads(self.request('GET', '/api/state')[2])
+        self.assertNotIn(task['id'], [item['id'] for item in state['tasks']])
+        # Thêm thẻ không có column ⇒ Backlog.
+        status, value = self.task({'action': 'add', 'title': 'Ý tưởng'})
+        self.assertEqual((status, value['task']['column']), (200, 'backlog'))
+
+    def test_task_endpoint_rejects_csrf_and_bad_bodies(self):
+        before = self.events()
+        for headers in [{'Content-Type': 'application/json'},
+                        {'Content-Type': 'text/plain', 'X-Company': '1'},
+                        {'Content-Type': 'application/json', 'X-Company': '1', 'Origin': 'https://evil.test'}]:
+            with self.subTest(headers=headers):
+                status, value = self.task({'action': 'add', 'title': 'Lừa'}, headers)
+                self.assertEqual((status, value['ok']), (403, False))
+        for body in [[], {}, {'action': 'start', 'id': 'T1', 'room': 'ATTEND'}, {'action': 'add'},
+                     {'action': 'add', 'title': ' '}, {'action': 'add', 'title': 'X', 'column': 'doing'},
+                     {'action': 'add', 'title': 'X', 'note': {}}, {'action': 'move', 'id': 'T999', 'column': 'todo'},
+                     {'action': 'move', 'id': [], 'column': 'todo'}, {'action': 'remove', 'id': '../x'}]:
+            with self.subTest(body=body):
+                status, value = self.task(body)
+                self.assertEqual((status, value['ok']), (400, False), value)
+        self.assertEqual(before, self.events())
+
+    def test_retro_is_served_as_text(self):
+        (self.root / 'state/retros').mkdir(parents=True, exist_ok=True)
+        (self.root / 'state/retros/ATTEND.md').write_text('# Retro ATTEND\n<script>x</script>', encoding='utf-8')
+        status, headers, payload = self.request('GET', '/retros/ATTEND.md')
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(headers['Content-Type'].startswith('text/plain'))
+        self.assertEqual(payload.decode('utf-8'), '# Retro ATTEND\n<script>x</script>')
+        for path in ('/retros/MISSING.md', '/retros/attend.md', '/retros/../rooms/ATTEND.json', '/retros/ATTEND.json'):
+            with self.subTest(path=path):
+                self.assertEqual(self.request('GET', path)[0], 404)
+        self.assertIn('ATTEND', json.loads(self.request('GET', '/api/state')[2])['retros'])
 
 
 class LiveServerTests(ServerTests):
@@ -252,6 +337,18 @@ class LiveServerTests(ServerTests):
                 break
             time.sleep(0.1)
         self.assertTrue(failed)
+
+    def test_task_question_answered_on_board_wakes_thu_ky_without_orca(self):
+        # Server thật (ORCA=/usr/bin/false): câu của thẻ vẫn phải ra task_ask_answered, không forward_failed.
+        ask_id = self.task_ask()
+        self.assertEqual(self.answer({'askId': ask_id, 'choice': 'a'})[0], 200)
+        for _ in range(50):
+            answered = [e for e in self.events() if e['type'] == 'task_ask_answered' and e['askId'] == ask_id]
+            if answered:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(answered), 1)
+        self.assertNotIn(ask_id, [e.get('askId') for e in self.events() if e['type'] == 'forward_failed'])
 
     def request(self, method, path, body=None, headers=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)

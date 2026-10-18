@@ -34,6 +34,11 @@ if a[:2] == ["room", "show"]:
     sys.exit(0 if os.path.exists("$TMP/room-" + a[2]) else 2)
 if a[:2] == ["room", "new"]:
     open("$TMP/room-" + a[2], "w").close()
+if a[:2] == ["task", "show"]:
+    path = "$TMP/task-" + a[2] + ".json"
+    if not os.path.exists(path):
+        print("Không tìm thấy thẻ: " + a[2], file=sys.stderr); sys.exit(2)
+    print(open(path).read())
 if a[:1] == ["snapshot"]:
     print(open("$TMP/snapshot.json").read())
 PY
@@ -81,7 +86,7 @@ check "exit 0" '[ $RC -eq 0 ]'
 check "không gọi orca/company.py" '[ ! -s "$LOG" ]'
 check "không tạo worktree" '[ ! -e "$WTROOT" ]'
 for want in "worktree create" "--base-branch main" "branch -m" ".env.local" "room new TEST" \
-            "terminal create" "claude --model opus --effort high --permission-mode bypassPermissions" \
+            "terminal create" "claude --model opus --effort medium --permission-mode bypassPermissions" \
             "/phong-manager TEST" "room set TEST --manager-terminal" "terminal read"; do
   check "in: $want" 'printf "%s" "$OUT" | grep -qF -- "$want"'
 done
@@ -97,8 +102,29 @@ check "không bịa web/.env.local" '[ ! -e "$WT/web/.env.local" ]'
 check "room new đúng cờ" 'grep -qF "company [\"room\", \"new\", \"ATTEND\", \"--title\", \"Lát 2 — có mặt\", \"--branch\", \"phong/attend\", \"--worktree\", \"$WT\"]" "$LOG"'
 check "room set handle mới (không lấy term_old)" 'grep -qF "[\"room\", \"set\", \"ATTEND\", \"--manager-terminal\", \"term_mgr\"]" "$LOG"'
 check "room new trước terminal create" '[ "$(grep -n "\"room\", \"new\"" "$LOG" | cut -d: -f1)" -lt "$(grep -n "terminal create" "$LOG" | cut -d: -f1)" ]'
-check "lệnh Manager đúng" 'grep -qF -- "--command claude --model opus --effort high --permission-mode bypassPermissions" "$LOG"'
+check "lệnh Manager đúng" 'grep -qF -- "--command claude --model opus --effort medium --permission-mode bypassPermissions" "$LOG"'
 check "phòng trùng ⇒ exit 2" 'bash "$HERE/bin/open-room.sh" ATTEND "x" >/dev/null 2>&1; [ $? -eq 2 ]'
+check "không --task ⇒ không gọi task" '! grep -qF "[\"task\"" "$LOG"'
+
+echo "open-room: --task"
+check "ID thẻ sai ⇒ exit 2" 'bash "$HERE/bin/open-room.sh" LINK "x" --task 3 --dry-run >/dev/null 2>&1; [ $? -eq 2 ]'
+check "--task thiếu ID ⇒ exit 2" 'bash "$HERE/bin/open-room.sh" LINK "x" --task >/dev/null 2>&1; [ $? -eq 2 ]'
+DRY="$(bash "$HERE/bin/open-room.sh" LINK "x" --task T1 --dry-run)"
+check "dry-run in task start" 'printf "%s" "$DRY" | grep -qF "task start T1 --room LINK"'
+: > "$LOG"
+check "thẻ không có ⇒ exit 2, chưa gọi Orca" 'bash "$HERE/bin/open-room.sh" LINK "x" --task T9 >/dev/null 2>&1; [ $? -eq 2 ] && ! grep -q "^orca" "$LOG"'
+echo '{"id":"T2","room":"ATTEND"}' > "$TMP/task-T2.json"
+check "thẻ đã gắn phòng ⇒ exit 2, chưa gọi Orca" 'bash "$HERE/bin/open-room.sh" LINK "x" --task T2 >/dev/null 2>&1; [ $? -eq 2 ] && ! grep -q "^orca" "$LOG"'
+echo '{"id":"T3","room":null,"asks":[{"id":"T3-q1","status":"resolved"},{"id":"T3-q2","status":"open"}]}' > "$TMP/task-T3.json"
+OUT="$(bash "$HERE/bin/open-room.sh" LINK "x" --task T3 2>&1)"; RC=$?
+check "thẻ còn câu chờ Sếp ⇒ exit 2, chưa gọi Orca" '[ $RC -eq 2 ] && ! grep -q "^orca" "$LOG"'
+check "báo đúng câu còn mở" 'printf "%s" "$OUT" | grep -qF "T3-q2" && ! printf "%s" "$OUT" | grep -qF "T3-q1"'
+echo '{"id":"T1","room":null}' > "$TMP/task-T1.json"
+: > "$LOG"; rm -f "$TMP/term-created"
+RUN="$(bash "$HERE/bin/open-room.sh" LINK "Mở từ thẻ" --task T1 2>&1)"; RC=$?
+check "mở từ thẻ exit 0" '[ $RC -eq 0 ] || { echo "$RUN"; false; }'
+check "gọi task start T1 --room LINK" 'grep -qF "[\"task\", \"start\", \"T1\", \"--room\", \"LINK\"]" "$LOG"'
+check "task start sau room set" '[ "$(grep -n "\"room\", \"set\"" "$LOG" | cut -d: -f1)" -lt "$(grep -n "\"task\", \"start\"" "$LOG" | cut -d: -f1)" ]'
 
 echo "overlap.sh"
 # ATTEND (worktree trên) sửa a.txt; STATS sửa a.txt khác cách (xung đột) ; DOC chỉ sửa b.txt.

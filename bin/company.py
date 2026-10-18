@@ -41,6 +41,10 @@ BUG_TRANSITIONS = {'open': {'fixing', 'deferred'}, 'fixing': {'retest', 'deferre
 BUG_SETTLED = ('closed', 'deferred')
 # Cổng 3 (giao diện mẫu) chặn mở lane dev-web khi phòng có Designer: code web trước khi Sếp duyệt mẫu là làm hai lần.
 UI_GATE = '3'
+# Thẻ việc (task): ý tưởng Sếp nêu nhưng chưa mở phòng. backlog = để đó; todo = Sếp đã cho làm, chờ mở phòng.
+TASK_COLUMNS = ('backlog', 'todo')
+# Câu hỏi của thẻ chưa mở phòng (ask add --task): id <ID thẻ>-q<n>, lưu trong chính thẻ ở tasks.json.
+TASK_ASK_ID = re.compile(r'(T[1-9][0-9]*)-q([1-9][0-9]*)')
 
 
 class UserError(ValueError):
@@ -69,6 +73,13 @@ def nonempty(value):
     if not isinstance(value, str) or not value.strip():
         raise argparse.ArgumentTypeError('Giá trị không được rỗng.')
     return value
+
+
+def validate_key_arg(value):
+    try:
+        return validate_key(value)
+    except UserError as exc:
+        raise argparse.ArgumentTypeError(str(exc))
 
 
 def pair(value):
@@ -148,6 +159,17 @@ class Company:
                 return nxt['room']
         return None
 
+    def tasks(self):
+        data = read_json(self.state / 'tasks.json', {'nextId': 1, 'tasks': []})
+        data.setdefault('nextId', 1)
+        data.setdefault('tasks', [])
+        return data
+
+    def retros(self):
+        """KEY các phòng đã có bài rút kinh nghiệm state/retros/<KEY>.md (board hiện link ở tab Done)."""
+        return sorted(path.stem for path in (self.state / 'retros').glob('*.md')
+                      if re.fullmatch(r'[A-Z0-9-]{2,24}', path.stem))
+
     def _snapshot(self):
         rooms = self.rooms()
         cutoff = datetime.now(TZ) - timedelta(days=7)
@@ -158,6 +180,10 @@ class Company:
         for room in rooms:
             queue.extend(dict(ask, options=effective_options(ask)) for ask in room['asks'] if ask['status'] == 'open')
             queue.extend(bug for bug in room['bugs'] if bug['needsBoss'] and bug['status'] not in BUG_SETTLED)
+        # Câu của thẻ chưa mở phòng cũng là việc của Sếp (board ghi nguồn là thẻ thay cho KEY phòng).
+        for task in self.tasks()['tasks']:
+            queue.extend(dict(ask, options=effective_options(ask)) for ask in task.get('asks', [])
+                         if ask['status'] == 'open')
         queue.sort(key=lambda item: (item['createdAt'], item['id']))
         events_path = self.state / 'events.jsonl'
         events = []
@@ -166,7 +192,9 @@ class Company:
                 from collections import deque
                 events = [json.loads(line) for line in deque(stream, maxlen=50) if line.strip()]
         return {'generatedAt': now(), 'appKey': self.company()['appKey'], 'keyQueue': self.company()['keyQueue'],
-                'rooms': visible, 'myQueue': queue, 'events': events[::-1]}
+                'rooms': visible, 'myQueue': queue, 'events': events[::-1],
+                'tasks': sorted(self.tasks()['tasks'], key=lambda task: (task['createdAt'], task['id'])),
+                'retros': self.retros()}
 
     def snapshot(self):
         with self.lock():
@@ -201,6 +229,103 @@ class Company:
                 self.room(room_key)
             return self._append_event(now(), event_type, room_key, fields)
 
+    def _save_tasks(self, data, event_type, fields):
+        """Gọi khi đã giữ khoá. Thẻ việc là state cấp công ty ⇒ sự kiện room=null (như record)."""
+        atomic_write(self.state / 'tasks.json', json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+        return self._append_event(now(), event_type, None, fields)
+
+    @staticmethod
+    def _task_fields(task, **extra):
+        return {'taskId': task['id'], 'title': task['title'], 'column': task['column'],
+                'linkedRoom': task['room'], **extra}
+
+    @staticmethod
+    def _check_task_text(title=None, note=None, title_required=False):
+        if title_required or title is not None:
+            if not isinstance(title, str) or not title.strip():
+                raise UserError('Tiêu đề thẻ không được rỗng.')
+        if note is not None and not isinstance(note, str):
+            raise UserError('note phải là chuỗi.')
+
+    @staticmethod
+    def _check_column(column):
+        if column not in TASK_COLUMNS:
+            raise UserError('Cột phải là backlog hoặc todo.')
+
+    def _find_task(self, data, task_id):
+        if not isinstance(task_id, str) or not re.fullmatch(r'T[1-9][0-9]*', task_id):
+            raise UserError('ID thẻ không hợp lệ: ' + str(task_id))
+        task = next((task for task in data['tasks'] if task['id'] == task_id), None)
+        if task is None:
+            raise UserError('Không tìm thấy thẻ: ' + task_id)
+        return task
+
+    def add_task(self, title, note=None, column='backlog'):
+        self._check_task_text(title, note, title_required=True)
+        self._check_column(column)
+        with self.lock():
+            data = self.tasks()
+            # nextId chỉ tăng: thẻ đã xoá không nhường số cho thẻ mới, sổ sự kiện cũ không bị nhầm thẻ.
+            stamp = now()
+            task = {'id': 'T' + str(data['nextId']), 'title': title.strip(), 'note': (note or '').strip() or None,
+                    'column': column, 'room': None, 'createdAt': stamp, 'updatedAt': stamp}
+            data['nextId'] += 1
+            data['tasks'].append(task)
+            self._save_tasks(data, 'task_added', self._task_fields(task))
+            return task
+
+    def move_task(self, task_id, column):
+        self._check_column(column)
+        with self.lock():
+            data = self.tasks()
+            task = self._find_task(data, task_id)
+            if task['room']:
+                raise UserError('Thẻ ' + task_id + ' đã mở phòng ' + task['room'] + ', không chuyển cột được.')
+            task.update(column=column, updatedAt=now())
+            self._save_tasks(data, 'task_changed', self._task_fields(task, change='move'))
+            return task
+
+    def edit_task(self, task_id, title=None, note=None):
+        self._check_task_text(title, note)
+        if title is None and note is None:
+            raise UserError('Cần --title hoặc --note.')
+        with self.lock():
+            data = self.tasks()
+            task = self._find_task(data, task_id)
+            if title is not None:
+                task['title'] = title.strip()
+            if note is not None:
+                task['note'] = note.strip() or None   # --note '' xoá ghi chú
+            task['updatedAt'] = now()
+            self._save_tasks(data, 'task_changed', self._task_fields(task, change='edit'))
+            return task
+
+    def remove_task(self, task_id):
+        with self.lock():
+            data = self.tasks()
+            task = self._find_task(data, task_id)
+            data['tasks'].remove(task)
+            self._save_tasks(data, 'task_removed', self._task_fields(task))
+            return task
+
+    def start_task(self, task_id, room_key):
+        """Gắn thẻ với phòng vừa mở (open-room.sh --task): từ giờ board hiện phòng ở Doing/Done thay cho thẻ.
+        Câu đã trả lời của thẻ ở lại trong thẻ làm lịch sử; câu còn mở thì chặn — thẻ rời Backlog/Todo là câu đó
+        mất khỏi tầm mắt Sếp mà phòng thì chưa biết câu trả lời."""
+        with self.lock():
+            self.room(room_key)
+            data = self.tasks()
+            task = self._find_task(data, task_id)
+            if task['room']:
+                raise UserError('Thẻ ' + task_id + ' đã gắn với phòng ' + task['room'] + '.')
+            waiting = [ask['id'] for ask in task.get('asks', []) if ask['status'] == 'open']
+            if waiting:
+                raise UserError('Thẻ ' + task_id + ' còn câu chờ Sếp: ' + ', '.join(waiting) +
+                                ' — trả lời (board) hoặc ask cancel trước khi mở phòng.')
+            task.update(room=room_key, updatedAt=now())
+            self._save_tasks(data, 'task_changed', self._task_fields(task, change='start'))
+            return task
+
     def find_item(self, item_id, collection, marker):
         if not isinstance(item_id, str):
             raise UserError('ID phải là chuỗi.')
@@ -213,6 +338,79 @@ class Company:
             raise UserError('Không tìm thấy ID: ' + item_id)
         return room, item
 
+    def _find_ask(self, ask_id):
+        """Gọi khi đã giữ khoá. Trả (room, task, ask, save): đúng một trong room/task khác None;
+        save(event_type, fields) ghi về đúng chỗ — file phòng, hay tasks.json với sự kiện room=null mang 'task'."""
+        match = TASK_ASK_ID.fullmatch(ask_id) if isinstance(ask_id, str) else None
+        if match is None:
+            room, ask = self.find_item(ask_id, 'asks', 'a')
+            return room, None, ask, lambda event_type, fields: self.save(room, event_type, fields)
+        data = self.tasks()
+        task = self._find_task(data, match.group(1))
+        ask = next((ask for ask in task.get('asks', []) if ask['id'] == ask_id), None)
+        if ask is None:
+            raise UserError('Không tìm thấy ID: ' + ask_id)
+        return None, task, ask, lambda event_type, fields: self._save_tasks(data, event_type,
+                                                                            {**fields, 'task': task['id']})
+
+    def add_task_ask(self, a):
+        """ask add --task: câu Sếp phải chọn trước khi thẻ thành phòng (ví dụ câu cuối báo cáo nghiên cứu).
+        Thẻ chưa có cổng nên không có --gate; còn lại y như ask của phòng."""
+        if a.gate is not None or a.also_gate:
+            raise UserError('--gate/--also-gate không dùng với --task: thẻ chưa mở phòng thì chưa có cổng.')
+        if a.kind == 'duyet':
+            raise UserError('Thẻ chưa có cổng nên không có câu duyệt — dùng --kind quyet hoặc thaotac.')
+        with self.lock():
+            data = self.tasks()
+            task = self._find_task(data, a.task)
+            if task['room']:
+                raise UserError('Thẻ ' + a.task + ' đã mở phòng ' + task['room'] +
+                                ' — hỏi qua phòng (ask add ' + task['room'] + ').')
+            asks = task.setdefault('asks', [])
+            number = max((int(ask['id'].rsplit('-q', 1)[1]) for ask in asks), default=0) + 1
+            ask = self._new_ask(a, task['id'] + '-q' + str(number), room_key=None, task_id=task['id'])
+            asks.append(ask)
+            self._save_tasks(data, 'ask_opened', {'askId': ask['id'], 'task': task['id']})
+            return ask
+
+    @staticmethod
+    def _new_ask(a, ask_id, room_key, task_id=None):
+        """Dựng ASK từ tham số ask add — dùng chung cho câu của phòng và câu của thẻ."""
+        if a.kind == 'duyet' and a.gate is None:
+            raise UserError('Câu hỏi duyệt cần --gate 1–6.')
+        if a.also_gate and a.gate is None:
+            raise UserError('--also-gate cần đi kèm --gate (cổng chính).')
+        options = a.option or [(option['key'], option['label'])
+                               for option in effective_options({'kind': a.kind, 'options': []})]
+        if a.kind == 'quyet':
+            # Sếp chọn bằng một cú bấm; chỉ gõ khi không phương án nào ổn.
+            if len([key for key, _ in a.option if key != OTHER]) < 2:
+                raise UserError('Câu quyết định cần ít nhất 2 phương án (--option k="…"), kèm --recommend. '
+                                'Mỗi câu hỏi một ask; CLI tự thêm phương án "Khác — tự viết".')
+            if OTHER not in [key for key, _ in options]:
+                options = options + [(OTHER, 'Khác — tự viết')]
+        keys = [key for key, _ in options]
+        if len(set(keys)) != len(keys):
+            raise UserError('Khoá phương án không được trùng.')
+        if a.kind == 'duyet' and 'ok' not in keys:
+            raise UserError('Câu hỏi duyệt phải có phương án ok.')
+        if a.recommend is not None and a.recommend not in keys:
+            raise UserError('--recommend phải khớp một phương án.')
+        ask = {'id': ask_id, 'room': room_key, 'kind': a.kind,
+               'gate': a.gate, 'alsoGates': sorted(set(a.also_gate) - {a.gate}),
+               'title': a.title, 'context': a.context,
+               'options': [{'key': key, 'label': label} for key, label in options],
+               'recommend': a.recommend, 'links': a.link, 'status': 'open', 'choice': None,
+               'note': None, 'answeredVia': None, 'createdAt': now(), 'resolvedAt': None}
+        if task_id is not None:
+            ask['task'] = task_id
+        return ask
+
+    def task_ask_answered(self, ask):
+        """Câu của thẻ Sếp trả lời trên board: không có Manager để chuyển, nên để sự kiện đánh thức Thư ký."""
+        return self.record('task_ask_answered', {'task': ask['task'], 'askId': ask['id'],
+                                                 'choice': ask['choice'], 'note': ask['note']})
+
     def resolve_ask(self, ask_id, choice, note=None, via='terminal'):
         if not isinstance(choice, str) or not choice.strip():
             raise UserError('choice phải là chuỗi không rỗng.')
@@ -221,7 +419,7 @@ class Company:
         if via not in VIA:
             raise UserError('Nguồn trả lời không hợp lệ.')
         with self.lock():
-            room, ask = self.find_item(ask_id, 'asks', 'a')
+            room, _, ask, save = self._find_ask(ask_id)
             if ask['status'] != 'open':
                 raise UserError('Câu hỏi đã được trả lời: ' + ask_id)
             keys = [option['key'] for option in effective_options(ask)]
@@ -236,15 +434,18 @@ class Company:
             if ask['gate'] is not None and choice not in ('sua', OTHER):
                 for gate in [ask['gate'], *ask.get('alsoGates', [])]:
                     room['gates'][str(gate)] = {'at': stamp, 'choice': choice, 'askId': ask_id}
-            self.save(room, 'ask_resolved', {'askId': ask_id, 'via': via, 'choice': choice, 'note': note})
+            save('ask_resolved', {'askId': ask_id, 'via': via, 'choice': choice, 'note': note})
             return ask
 
     def reopen_ask(self, ask_id, note=None):
         """Sếp bấm nhầm: đưa câu hỏi về trạng thái mở, gỡ cổng mà chính câu trả lời đó đã ghi."""
         with self.lock():
-            room, ask = self.find_item(ask_id, 'asks', 'a')
+            room, task, ask, save = self._find_ask(ask_id)
             if ask['status'] != 'resolved':
                 raise UserError('Câu hỏi đang mở, không cần mở lại: ' + ask_id)
+            if task is not None and task['room']:
+                # Thẻ đã thành phòng: câu mở lại sẽ không ai thấy ở Backlog/Todo — hỏi lại qua phòng.
+                raise UserError('Thẻ ' + task['id'] + ' đã mở phòng ' + task['room'] + ' — hỏi lại qua phòng.')
             for number in ([ask['gate'], *ask.get('alsoGates', [])] if ask['gate'] is not None else []):
                 gate = room['gates'].get(str(number))
                 # Chỉ gỡ khi cổng do chính ask này ghi; ask sau đã duyệt lại thì giữ.
@@ -252,17 +453,17 @@ class Company:
                     room['gates'][str(number)] = None
             previous = ask['choice']
             ask.update(status='open', choice=None, note=None, answeredVia=None, resolvedAt=None)
-            self.save(room, 'ask_reopened', {'askId': ask_id, 'note': note, 'previousChoice': previous})
+            save('ask_reopened', {'askId': ask_id, 'note': note, 'previousChoice': previous})
             return ask
 
     def cancel_ask(self, ask_id, note=None):
         """Manager rút câu hỏi chưa ai trả lời (ví dụ thay câu hỏi mở bằng câu có phương án)."""
         with self.lock():
-            room, ask = self.find_item(ask_id, 'asks', 'a')
+            _, _, ask, save = self._find_ask(ask_id)
             if ask['status'] != 'open':
                 raise UserError('Chỉ rút được câu hỏi đang mở: ' + ask_id)
             ask.update(status='cancelled', note=note, resolvedAt=now())
-            self.save(room, 'ask_cancelled', {'askId': ask_id, 'note': note})
+            save('ask_cancelled', {'askId': ask_id, 'note': note})
             return ask
 
     def forward_failed(self, ask_id, detail):
@@ -280,8 +481,33 @@ class Company:
             return self.reopen_ask(args.id, args.note)
         if args.command == 'ask' and args.action == 'cancel':
             return self.cancel_ask(args.id, args.note)
+        if args.command == 'task':
+            return self.execute_task(args)
+        if args.command == 'ask' and args.action == 'add':
+            # Đúng một nguồn: KEY phòng hoặc --task thẻ.
+            if (args.key is None) == (args.task is None):
+                raise UserError('ask add cần đúng một trong hai: KEY phòng hoặc --task ID thẻ.')
+            if args.task is not None:
+                return self.add_task_ask(args)
         with self.lock():
             return self._execute(args)
+
+    def execute_task(self, a):
+        if a.action == 'add':
+            return self.add_task(a.title, a.note, a.column)
+        if a.action == 'move':
+            return self.move_task(a.id, a.column)
+        if a.action == 'edit':
+            return self.edit_task(a.id, a.title, a.note)
+        if a.action == 'remove':
+            return self.remove_task(a.id)
+        if a.action == 'start':
+            return self.start_task(a.id, a.room)
+        with self.lock():
+            data = self.tasks()
+            if a.action == 'show':
+                return self._find_task(data, a.id)
+            return [task for task in data['tasks'] if not a.column or (task['column'] == a.column and not task['room'])]
 
     def _execute(self, a):
         command, action = a.command, getattr(a, 'action', None)
@@ -290,8 +516,13 @@ class Company:
         if command == 'room' and action == 'list':
             return [room for room in self.rooms() if a.all or room['status'] == 'active']
         if command == 'ask' and action == 'list':
-            rooms = [self.room(a.room)] if a.room else self.rooms()
-            return [ask for room in rooms for ask in room['asks'] if not a.open or ask['status'] == 'open']
+            if a.room and a.task:
+                raise UserError('ask list nhận --room hoặc --task, không cả hai.')
+            rooms = [] if a.task else [self.room(a.room)] if a.room else self.rooms()
+            tasks = [] if a.room else [self._find_task(self.tasks(), a.task)] if a.task else self.tasks()['tasks']
+            asks = [ask for room in rooms for ask in room['asks']]
+            asks += [ask for task in tasks for ask in task.get('asks', [])]
+            return [ask for ask in asks if not a.open or ask['status'] == 'open']
         if command == 'key' and action == 'status':
             return self.company()
 
@@ -370,33 +601,8 @@ class Company:
                     fields.update(note='Mở lane dev-web trước cổng 3 (--force-gate): Sếp đồng ý ngoại lệ.',
                                   forceGate=True)
             elif command == 'ask':
-                if a.kind == 'duyet' and a.gate is None:
-                    raise UserError('Câu hỏi duyệt cần --gate 1–6.')
-                if a.also_gate and a.gate is None:
-                    raise UserError('--also-gate cần đi kèm --gate (cổng chính).')
-                options = a.option or [(option['key'], option['label'])
-                                       for option in effective_options({'kind': a.kind, 'options': []})]
-                if a.kind == 'quyet':
-                    # Sếp chọn bằng một cú bấm; chỉ gõ khi không phương án nào ổn.
-                    if len([key for key, _ in a.option if key != OTHER]) < 2:
-                        raise UserError('Câu quyết định cần ít nhất 2 phương án (--option k="…"), kèm --recommend. '
-                                        'Mỗi câu hỏi một ask; CLI tự thêm phương án "Khác — tự viết".')
-                    if OTHER not in [key for key, _ in options]:
-                        options = options + [(OTHER, 'Khác — tự viết')]
-                keys = [key for key, _ in options]
-                if len(set(keys)) != len(keys):
-                    raise UserError('Khoá phương án không được trùng.')
-                if a.kind == 'duyet' and 'ok' not in keys:
-                    raise UserError('Câu hỏi duyệt phải có phương án ok.')
-                if a.recommend is not None and a.recommend not in keys:
-                    raise UserError('--recommend phải khớp một phương án.')
                 number = max((int(ask['id'].rsplit('-a', 1)[1]) for ask in room['asks']), default=0) + 1
-                ask = {'id': room['key'] + '-a' + str(number), 'room': room['key'], 'kind': a.kind,
-                       'gate': a.gate, 'alsoGates': sorted(set(a.also_gate) - {a.gate}),
-                       'title': a.title, 'context': a.context,
-                       'options': [{'key': key, 'label': label} for key, label in options],
-                       'recommend': a.recommend, 'links': a.link, 'status': 'open', 'choice': None,
-                       'note': None, 'answeredVia': None, 'createdAt': now(), 'resolvedAt': None}
+                ask = self._new_ask(a, room['key'] + '-a' + str(number), room['key'])
                 room['asks'].append(ask)
                 event_type, fields, result = 'ask_opened', {'askId': ask['id']}, ask
             elif command == 'bug':
@@ -520,7 +726,8 @@ def parser():
     for sub in (reopen, cancel):
         sub.add_argument('id')
         sub.add_argument('--note')
-    add.add_argument('key')
+    add.add_argument('key', nargs='?')
+    add.add_argument('--task', help='ID thẻ chưa mở phòng (T5) — thay cho KEY phòng')
     add.add_argument('--kind', required=True, choices=('duyet', 'quyet', 'thaotac'))
     add.add_argument('--gate', type=int, choices=range(1, 7))
     add.add_argument('--also-gate', type=int, choices=range(1, 7), action='append', default=[],
@@ -536,6 +743,7 @@ def parser():
     resolve.add_argument('--via', choices=VIA, default='terminal')
     listing.add_argument('--open', action='store_true')
     listing.add_argument('--room')
+    listing.add_argument('--task', help='chỉ câu của thẻ này')
     add, setting = group('bug', ['add', 'set'])
     add.add_argument('key')
     add.add_argument('--title', required=True, type=nonempty)
@@ -571,6 +779,19 @@ def parser():
     note = commands.add_parser('note')
     note.add_argument('key')
     note.add_argument('text', type=nonempty)
+    add, move, edit, remove, start, show, listing = group('task', ['add', 'move', 'edit', 'remove', 'start',
+                                                                   'show', 'list'])
+    add.add_argument('--title', required=True, type=nonempty)
+    add.add_argument('--note')
+    add.add_argument('--column', choices=TASK_COLUMNS, default='backlog')
+    for sub in (move, edit, remove, start, show):
+        sub.add_argument('id')
+    move.add_argument('--column', required=True, choices=TASK_COLUMNS)
+    edit.add_argument('--title', type=nonempty)
+    edit.add_argument('--note')
+    start.add_argument('--room', required=True, type=validate_key_arg)
+    listing.add_argument('--column', choices=TASK_COLUMNS,
+                         help='chỉ thẻ chưa mở phòng của cột này; bỏ trống = mọi thẻ')
     commands.add_parser('snapshot')
     # Cho phép --json ở mọi cấp lệnh mà không xử lý lại giá trị của option khác.
     def add_json(subparser):

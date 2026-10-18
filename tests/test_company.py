@@ -414,6 +414,160 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual((state['appKey']['room'], state['keyQueue']), ('STATS', []))
         self.assertEqual(self.events()[-1]['keyHandedTo'], 'STATS')
 
+    def test_task_add_move_edit_remove_and_board(self):
+        # Ý tưởng Sếp chưa làm ngay ⇒ thẻ Backlog; Sếp cho làm ⇒ Todo. Thẻ là state cấp công ty (room=null).
+        first = self.data('task', 'add', '--title', 'Giao lưu đội', '--note', 'Hai đội hẹn đá')
+        self.assertEqual((first['id'], first['column'], first['room'], first['note']),
+                         ('T1', 'backlog', None, 'Hai đội hẹn đá'))
+        self.assertEqual(datetime.fromisoformat(first['createdAt']).utcoffset(), timedelta(hours=7))
+        self.assertEqual(self.run_cli('task', 'add', '--title', 'Xếp hạng', '--column', 'todo').stdout.strip(), 'T2')
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['room'], event['taskId'], event['column']),
+                         ('task_added', None, 'T2', 'todo'))
+        self.run_cli('task', 'move', 'T1', '--column', 'todo')
+        self.assertEqual((self.events()[-1]['type'], self.events()[-1]['change']), ('task_changed', 'move'))
+        edited = self.data('task', 'edit', 'T1', '--title', 'Giao lưu', '--note', '')
+        self.assertEqual((edited['title'], edited['note'], edited['column']), ('Giao lưu', None, 'todo'))
+        self.assertGreater(edited['updatedAt'], edited['createdAt'])
+        self.assertEqual([task['id'] for task in self.data('task', 'list', '--column', 'todo')], ['T1', 'T2'])
+        self.assertEqual(self.data('task', 'list', '--column', 'backlog'), [])
+        self.run_cli('task', 'remove', 'T1')
+        self.assertEqual(self.events()[-1]['type'], 'task_removed')
+        # Số không dùng lại sau khi xoá: sự kiện cũ của T1 không bị nhầm với thẻ mới.
+        self.assertEqual(self.run_cli('task', 'add', '--title', 'Mới').stdout.strip(), 'T3')
+        board = self.board()
+        self.assertEqual([task['id'] for task in board['tasks']], ['T2', 'T3'])
+        self.assertEqual(board['tasks'], self.data('snapshot')['tasks'])
+        self.assertEqual(board['events'][0]['type'], 'task_added')
+
+    def test_task_start_links_room_and_freezes_column(self):
+        self.run_cli('task', 'add', '--title', 'Có mặt', '--column', 'todo')
+        task = self.data('task', 'start', 'T1', '--room', 'ATTEND')
+        self.assertEqual(task['room'], 'ATTEND')
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['change'], event['linkedRoom'], event['room']),
+                         ('task_changed', 'start', 'ATTEND', None))
+        # Thẻ đã mở phòng: board hiện phòng thay cho thẻ, nên rời mọi cột và không chuyển cột được nữa.
+        self.assertEqual(self.data('task', 'list', '--column', 'todo'), [])
+        self.assertEqual(self.data('task', 'show', 'T1')['room'], 'ATTEND')
+        before = self.events()
+        self.assertIn('đã mở phòng', self.run_cli('task', 'move', 'T1', '--column', 'backlog', code=2).stderr)
+        self.assertIn('đã gắn', self.run_cli('task', 'start', 'T1', '--room', 'ATTEND', code=2).stderr)
+        self.assertEqual(before, self.events())
+
+    def test_invalid_task_input_does_not_change_state(self):
+        self.run_cli('task', 'add', '--title', 'Một')
+        before = self.events()
+        for command in [('task', 'add', '--title', '  '),
+                        ('task', 'add', '--title', 'X', '--column', 'doing'),
+                        ('task', 'move', 'T1', '--column', 'done'),
+                        ('task', 'move', 'T9', '--column', 'todo'),
+                        ('task', 'move', '../T1', '--column', 'todo'),
+                        ('task', 'edit', 'T1'),
+                        ('task', 'remove', 'T0'),
+                        ('task', 'show', 'T2'),
+                        ('task', 'start', 'T1', '--room', 'MISSING'),
+                        ('task', 'start', 'T1', '--room', 'attend')]:
+            with self.subTest(command=command):
+                result = self.run_cli(*command, code=2)
+                self.assertTrue(result.stderr.strip())
+                self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(before, self.events())
+
+    def task_ask(self, task='T1', *extra):
+        return self.run_cli('ask', 'add', '--task', task, '--kind', 'quyet', '--title', 'Ai được ghi kỷ niệm?',
+                            '--option', 'a=Đội trưởng', '--option', 'b=Mọi thành viên', '--recommend', 'a',
+                            *extra).stdout.strip()
+
+    def test_task_ask_lives_on_card_and_reaches_boss_queue(self):
+        # Câu của thẻ chưa mở phòng (ví dụ câu cuối báo cáo nghiên cứu) cũng phải tới tay Sếp.
+        self.run_cli('task', 'add', '--title', 'Phòng truyền thống')
+        self.assertEqual(self.task_ask('T1', '--context', 'Báo cáo mục 7', '--link', 'docs/x.html'), 'T1-q1')
+        self.assertEqual(self.task_ask(), 'T1-q2')
+        thaotac = self.data('ask', 'add', '--task', 'T1', '--kind', 'thaotac', '--title', 'Gửi ảnh mẫu')
+        self.assertEqual((thaotac['id'], thaotac['options']), ('T1-q3', [{'key': 'done', 'label': 'Đã làm xong'}]))
+        task = self.data('task', 'show', 'T1')
+        first = task['asks'][0]
+        self.assertEqual((first['room'], first['task'], first['gate'], first['recommend'], first['links']),
+                         (None, 'T1', None, 'a', ['docs/x.html']))
+        self.assertEqual([option['key'] for option in first['options']], ['a', 'b', 'khac'])
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['room'], event['askId'], event['task']),
+                         ('ask_opened', None, 'T1-q3', 'T1'))
+        board = self.board()
+        self.assertEqual([item['id'] for item in board['myQueue']], ['T1-q1', 'T1-q2', 'T1-q3'])
+        self.assertEqual(board['tasks'][0]['asks'], task['asks'])
+        self.assertEqual([ask['id'] for ask in self.data('ask', 'list', '--open')], ['T1-q1', 'T1-q2', 'T1-q3'])
+        self.assertEqual(len(self.data('ask', 'list', '--task', 'T1')), 3)
+        self.assertEqual(self.data('ask', 'list', '--room', 'ATTEND'), [])
+        # Trả lời / huỷ / mở lại chạy như câu của phòng; sự kiện room=null mang 'task'.
+        with self.subTest('khác cần ghi chú'):
+            self.run_cli('ask', 'resolve', 'T1-q1', '--choice', 'khac', code=2)
+        resolved = self.data('ask', 'resolve', 'T1-q1', '--choice', 'b', '--note', 'Ai cũng ghi', '--via', 'thu-ky')
+        self.assertEqual((resolved['status'], resolved['choice'], resolved['answeredVia']), ('resolved', 'b', 'thu-ky'))
+        event = self.events()[-1]
+        self.assertEqual((event['type'], event['room'], event['task'], event['via']), ('ask_resolved', None, 'T1', 'thu-ky'))
+        # Thư ký tự ghi câu Sếp trả lời trong chat ⇒ không có task_ask_answered (chỉ board ghi).
+        self.assertNotIn('task_ask_answered', [e['type'] for e in self.events()])
+        self.run_cli('ask', 'reopen', 'T1-q1', '--note', 'Sếp bấm nhầm')
+        self.assertEqual(self.data('task', 'show', 'T1')['asks'][0]['status'], 'open')
+        self.run_cli('ask', 'cancel', 'T1-q2', '--note', 'Thay câu khác')
+        self.assertEqual((self.events()[-1]['type'], self.events()[-1]['task']), ('ask_cancelled', 'T1'))
+        self.assertEqual([item['id'] for item in self.board()['myQueue']], ['T1-q1', 'T1-q3'])
+        # Thẻ khác đánh số riêng.
+        self.run_cli('task', 'add', '--title', 'Khác')
+        self.assertEqual(self.task_ask('T2'), 'T2-q1')
+
+    def test_task_ask_input_errors(self):
+        self.run_cli('task', 'add', '--title', 'Phòng truyền thống')
+        self.run_cli('task', 'add', '--title', 'Đã mở', '--column', 'todo')
+        self.run_cli('task', 'start', 'T2', '--room', 'ATTEND')
+        before = self.events()
+        base = ('--kind', 'quyet', '--title', 'Hỏi', '--option', 'a=A', '--option', 'b=B')
+        for command, needle in [
+                (('ask', 'add', *base), 'đúng một'),                                  # thiếu cả hai
+                (('ask', 'add', 'ATTEND', '--task', 'T1', *base), 'đúng một'),        # cả hai
+                (('ask', 'add', '--task', 'T9', *base), 'Không tìm thấy thẻ'),
+                (('ask', 'add', '--task', 'x1', *base), 'không hợp lệ'),
+                (('ask', 'add', '--task', 'T2', *base), 'đã mở phòng'),
+                (('ask', 'add', '--task', 'T1', '--gate', '1', *base), '--gate'),
+                (('ask', 'add', '--task', 'T1', '--also-gate', '5', *base), '--gate'),
+                (('ask', 'add', '--task', 'T1', '--kind', 'duyet', '--title', 'Duyệt'), 'duyệt'),
+                (('ask', 'add', '--task', 'T1', '--kind', 'quyet', '--title', 'Hỏi', '--option', 'a=A'), '2 phương án'),
+                (('ask', 'resolve', 'T1-q1', '--choice', 'a'), 'Không tìm thấy ID'),
+                (('ask', 'list', '--room', 'ATTEND', '--task', 'T1'), 'không cả hai')]:
+            with self.subTest(command=command):
+                result = self.run_cli(*command, code=2)
+                self.assertIn(needle, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(before, self.events())
+
+    def test_task_start_blocked_while_card_has_open_questions(self):
+        self.run_cli('task', 'add', '--title', 'Phòng truyền thống', '--column', 'todo')
+        self.task_ask()
+        self.task_ask()
+        self.run_cli('ask', 'resolve', 'T1-q1', '--choice', 'a', '--via', 'board')
+        before = self.events()
+        result = self.run_cli('task', 'start', 'T1', '--room', 'ATTEND', code=2)
+        self.assertIn('T1-q2', result.stderr)
+        self.assertNotIn('T1-q1', result.stderr)
+        self.assertEqual(before, self.events())
+        self.assertIsNone(self.data('task', 'show', 'T1')['room'])
+        self.run_cli('ask', 'cancel', 'T1-q2')
+        task = self.data('task', 'start', 'T1', '--room', 'ATTEND')
+        # Câu đã trả lời ở lại trong thẻ làm lịch sử; thẻ đã thành phòng thì không hỏi / mở lại qua thẻ nữa.
+        self.assertEqual([(ask['id'], ask['status']) for ask in task['asks']],
+                         [('T1-q1', 'resolved'), ('T1-q2', 'cancelled')])
+        self.assertIn('đã mở phòng', self.run_cli('ask', 'reopen', 'T1-q1', code=2).stderr)
+        self.assertIn('đã mở phòng', self.run_cli('ask', 'add', '--task', 'T1', '--kind', 'thaotac',
+                                                 '--title', 'X', code=2).stderr)
+
+    def test_snapshot_lists_retros_of_rooms(self):
+        (self.root / 'state/retros').mkdir(parents=True)
+        (self.root / 'state/retros/ATTEND.md').write_text('# Retro')
+        (self.root / 'state/retros/khong-hop-le.md').write_text('x')
+        self.assertEqual(self.data('snapshot')['retros'], ['ATTEND'])
+
 
 HEARTBEAT = REPO / 'bin' / 'heartbeat.py'
 

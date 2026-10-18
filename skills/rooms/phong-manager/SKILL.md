@@ -126,15 +126,18 @@ orca terminal send --terminal $H --text "touch .lanes/tmp/probe-$k-<vai>" --ente
 sleep 3; ls .lanes/tmp/probe-$k-<vai>                     # PHẢI có, không thì đóng terminal, tạo lại
 ```
 
-Mức suy nghĩ (`--effort` của Claude, `model_reasoning_effort` của Codex) — đặt theo việc, không mặc định high:
+Mức suy nghĩ (`--effort` của Claude, `model_reasoning_effort` của Codex) — đặt theo việc, mặc định `medium`
+(Sếp chốt 17/10: high chỉ ở chỗ khó đảo ngược hoặc dễ sai ngầm):
 
 | Lượt | Mức |
 |---|---|
-| Techlead, Designer, Review, dev lượt đầu của một lát | `high` |
-| QA chạy ca test theo kế hoạch đã duyệt, dev sửa lỗi nhỏ / sửa theo review, Designer sửa lab theo ghi chú | `medium` |
+| Techlead; Review (mọi vòng); Designer vẽ màn MỚI (3 ý tưởng) | `high` |
+| dev-server khi lát đụng tiền, quyền, giao dịch, đồng thời hoặc migration (danh sách C9) | `high` |
+| dev-server phần còn lại; dev-web (làm theo lab đã duyệt); QA (kế hoạch + chạy ca); Designer sửa lab; dev sửa lỗi / sửa theo review | `medium` |
+| Luồng nhỏ (§1b): mọi vai trừ Review | `medium` |
 
-Dispatch MỘT câu trỏ vào brief. Model theo vai; mức suy nghĩ theo bảng trên — lệnh mẫu dưới là lượt đầu (`high`),
-lượt `medium` thì đổi đúng số đó:
+Dispatch MỘT câu trỏ vào brief. Model theo vai; mức suy nghĩ theo bảng trên — lệnh mẫu dưới ghi `high`, lượt
+`medium` thì đổi đúng số đó:
 
 | Vai | Agent | Model |
 |---|---|---|
@@ -149,7 +152,7 @@ lượt `medium` thì đổi đúng số đó:
 orca terminal send --terminal $H --enter --text "codex -s workspace-write -a never --strict-config -m gpt-6-astra -c model_reasoning_effort=high -c sandbox_workspace_write.network_access=true --add-dir /Users/tien/sportshub-company \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
 # Claude (techlead/designer/review: opus · qa: sonnet) — designer tự mở lane codex image_gen theo thiet-ke-man
 orca terminal send --terminal $H --enter --text "claude --model claude-opus-5-5 --effort high --permission-mode bypassPermissions \"Lane <vai> phòng $KEY. Read $R/briefs/<vai>.md and follow it.\""
-orca terminal send --terminal $H --enter --text "claude --model claude-sonnet-5-5 --effort high --permission-mode bypassPermissions \"Lane qa phòng $KEY. Read $R/briefs/qa.md and follow it.\""
+orca terminal send --terminal $H --enter --text "claude --model claude-sonnet-5-5 --effort medium --permission-mode bypassPermissions \"Lane qa phòng $KEY. Read $R/briefs/qa.md and follow it.\""
 orca terminal read --terminal $H --screen --limit 20      # xác nhận agent đã nhận việc
 C lane add $KEY --role <vai> --handle $H --model codex|opus|sonnet
 # dev-web ở phòng có Designer: CLI từ chối khi cổng 3 chưa duyệt. Sếp cho ngoại lệ ⇒ thêm --force-gate (được ghi lại).

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Mở một phòng: worktree Orca + nhánh phong/<key> + .env.local + terminal Manager (Claude Opus) + ghi board.
 #
-#   open-room.sh KEY "Tiêu đề" ["ý tưởng ban đầu"] [--dry-run]
+#   open-room.sh KEY "Tiêu đề" ["ý tưởng ban đầu"] [--task ID] [--dry-run]
 #
+# --task ID: mở phòng từ thẻ việc (T1, T2…) trên board; mở xong gọi company.py task start ID --room KEY
+#            để thẻ rời Backlog/Todo và hiện như phòng ở Doing/Done.
 # --dry-run: in toàn bộ chuỗi lệnh, KHÔNG chạy gì (kể cả kiểm tra), exit 0.
 # Biến môi trường (test dùng để thay công cụ thật):
 #   SPORTSHUB_CO    gốc ~/sportshub-company     SPORTSHUB_REPO  repo SportsHub
@@ -19,18 +21,22 @@ COMPANY_PY="${COMPANY_PY:-$CO/bin/company.py}"
 MANAGER_WAIT="${MANAGER_WAIT:-60}"
 BASE_BRANCH=main
 
-usage() { echo "Dùng: open-room.sh KEY \"Tiêu đề\" [\"ý tưởng ban đầu\"] [--dry-run]" >&2; exit 2; }
+usage() { echo "Dùng: open-room.sh KEY \"Tiêu đề\" [\"ý tưởng ban đầu\"] [--task ID] [--dry-run]" >&2; exit 2; }
 die() { echo "open-room: $1" >&2; exit "${2:-2}"; }
 
 DRY_RUN=0
+TASK=""
 POS=()
-for a in "$@"; do
-  case "$a" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --task) [ $# -ge 2 ] || die "--task cần ID thẻ (ví dụ T3)"; TASK="$2"; shift ;;
+    --task=*) TASK="${1#--task=}" ;;
     -h|--help) usage ;;
-    --*) die "cờ lạ: $a" ;;
-    *) POS+=("$a") ;;
+    --*) die "cờ lạ: $1" ;;
+    *) POS+=("$1") ;;
   esac
+  shift
 done
 [ "${#POS[@]}" -ge 2 ] && [ "${#POS[@]}" -le 3 ] || usage
 KEY="${POS[0]}"
@@ -40,6 +46,7 @@ IDEA="${POS[2]:-}"
 # KEY theo CONTRACT: chữ hoa, số, gạch ngang, 2–24 ký tự.
 [[ "$KEY" =~ ^[A-Z0-9-]{2,24}$ ]] || die "KEY '$KEY' sai: chỉ chữ hoa, số, gạch ngang, 2–24 ký tự"
 [ -n "${TITLE// /}" ] || die "tiêu đề rỗng"
+[ -z "$TASK" ] || [[ "$TASK" =~ ^T[1-9][0-9]*$ ]] || die "ID thẻ '$TASK' sai: dạng T1, T2…"
 
 KEY_LOWER="$(printf '%s' "$KEY" | tr '[:upper:]' '[:lower:]')"
 BRANCH="phong/$KEY_LOWER"
@@ -52,7 +59,7 @@ sq() { local s=${1//\'/\'\\\'\'}; printf "'%s'" "$s"; }
 # Lệnh khởi động Manager, gõ vào shell của terminal mới.
 PROMPT="/phong-manager $KEY $TITLE"
 [ -n "$IDEA" ] && PROMPT="$PROMPT — Ý tưởng ban đầu: $IDEA"
-MANAGER_CMD="claude --model opus --effort high --permission-mode bypassPermissions $(sq "$PROMPT")"
+MANAGER_CMD="claude --model opus --effort medium --permission-mode bypassPermissions $(sq "$PROMPT")"
 
 if [ "$DRY_RUN" = 1 ]; then
   W="<WORKTREE>"; H="<HANDLE>"
@@ -63,6 +70,9 @@ python3 $(sq "$COMPANY_PY") room show $KEY              # PHẢI lỗi (phòng c
 git -C $(sq "$REPO") rev-parse --verify --quiet refs/heads/$BRANCH   # PHẢI rỗng (nhánh chưa có)
 git -C $(sq "$REPO") rev-parse --verify refs/heads/$BASE_BRANCH
 test ! -e $(sq "$WT_EXPECTED")
+EOF
+  [ -n "$TASK" ] && echo "python3 $(sq "$COMPANY_PY") task show $TASK --json          # PHẢI có thẻ, room=null, không còn ask status=open"
+  cat <<EOF
 # 2. Tạo worktree Orca từ $BASE_BRANCH (đọc result.worktree.path từ JSON)
 $ORCA worktree create --repo $(sq "path:$REPO") --name $KEY_LOWER --no-parent --base-branch $BASE_BRANCH --setup skip --comment $(sq "Phòng $KEY: $TITLE") --json
 # 3. Đặt tên nhánh phong/<key> (Orca đặt nhánh theo --name)
@@ -82,6 +92,8 @@ python3 $(sq "$COMPANY_PY") room set $KEY --manager-terminal $H
 # 8. Đọc màn hình xác nhận Manager đã chạy (chờ tối đa ${MANAGER_WAIT}s)
 $ORCA terminal read --terminal $H --screen --limit 40
 EOF
+  [ -n "$TASK" ] && echo "# 9. Gắn thẻ việc với phòng (thẻ rời Backlog/Todo, hiện ở Doing)
+python3 $(sq "$COMPANY_PY") task start $TASK --room $KEY"
   exit 0
 fi
 
@@ -97,6 +109,24 @@ fi
 git -C "$REPO" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null && die "nhánh $BRANCH đã có trong $REPO"
 git -C "$REPO" rev-parse --verify --quiet "refs/heads/$BASE_BRANCH" >/dev/null || die "không có nhánh $BASE_BRANCH trong $REPO"
 [ ! -e "$WT_EXPECTED" ] || die "thư mục $WT_EXPECTED đã có"
+if [ -n "$TASK" ]; then
+  # Kiểm thẻ TRƯỚC khi tạo gì: thẻ sai hay đã mở phòng thì dừng sớm, không để lại worktree mồ côi.
+  TASK_JSON="$(python3 "$COMPANY_PY" task show "$TASK" --json 2>&1)" || die "không có thẻ $TASK: $TASK_JSON"
+  TASK_ROOM="$(printf '%s' "$TASK_JSON" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("room") or "")
+except (ValueError, AttributeError):
+    print("?")
+')"
+  [ -z "$TASK_ROOM" ] || die "thẻ $TASK đã gắn phòng ${TASK_ROOM} (hoặc không đọc được thẻ)"
+  # Câu của thẻ còn chờ Sếp ⇒ task start sẽ từ chối; dừng ở đây cho khỏi tạo worktree rồi mới lỗi.
+  TASK_WAITING="$(printf '%s' "$TASK_JSON" | python3 -c '
+import json, sys
+print(", ".join(a["id"] for a in json.load(sys.stdin).get("asks", []) if a.get("status") == "open"))
+')"
+  [ -z "$TASK_WAITING" ] || die "thẻ $TASK còn câu chờ Sếp: $TASK_WAITING — trả lời trên board hoặc company.py ask cancel trước"
+fi
 
 # Đọc một trường từ JSON Orca ở stdin. $1 = danh sách đường dẫn thử lần lượt, cách nhau bởi dấu phẩy.
 json_get() {
@@ -188,6 +218,12 @@ fi
 
 python3 "$COMPANY_PY" room set "$KEY" --manager-terminal "$H" || die "company.py room set lỗi (handle $H)" 3
 echo "✓ Manager terminal $H"
+
+if [ -n "$TASK" ]; then
+  python3 "$COMPANY_PY" task start "$TASK" --room "$KEY" >/dev/null \
+    || die "gắn thẻ $TASK lỗi (phòng đã mở). Chạy tay: python3 $COMPANY_PY task start $TASK --room $KEY" 3
+  echo "✓ thẻ $TASK gắn với phòng $KEY"
+fi
 
 echo "▶ Chờ Manager hiện lên (tối đa ${MANAGER_WAIT}s)…"
 SCREEN=""; OK=0; waited=0

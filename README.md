@@ -31,7 +31,7 @@ Im lặng không bao giờ là đồng ý. Chi tiết: [`docs/WORKFLOW.md`](docs
 
 | Đường dẫn | Là gì |
 |---|---|
-| `bin/company.py` | CLI duy nhất được ghi state: phòng, câu hỏi (`ask`), lỗi (`bug`), lane, chìa khoá app, bằng chứng |
+| `bin/company.py` | CLI duy nhất được ghi state: phòng, câu hỏi (`ask`), lỗi (`bug`), thẻ việc (`task`), lane, chìa khoá app, bằng chứng |
 | `bin/board-server.py` + `board.html` | Board trên localhost; Sếp bấm trả lời, server tự gửi câu trả lời vào terminal Manager |
 | `bin/wait-event.sh` | Chờ sự kiện mới (lọc theo phòng/loại) — Thư ký và Manager chỉ thức khi có việc |
 | `bin/open-room.sh` | Mở phòng: worktree + nhánh + terminal Manager (dùng Orca CLI) |

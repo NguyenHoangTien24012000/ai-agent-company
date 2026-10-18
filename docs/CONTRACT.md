@@ -10,10 +10,12 @@ bin/company.py        CLI duy nhất ghi state (lane L1)
 bin/board-server.py   server localhost: phục vụ board + nhận nút bấm (lane L1)
 bin/wait-event.sh     chờ sự kiện mới, có lọc theo phòng/loại (lane L1)
 bin/heartbeat.py      nhịp kiểm không dùng AI: lane đứng yên, Thư ký ngủ quên (open-board.sh bật nền)
-bin/open-room.sh      mở phòng: worktree + env + terminal Manager (lane L4)
+bin/open-room.sh      mở phòng: worktree + env + terminal Manager (lane L4); `--task ID` gắn thẻ việc với phòng
 board.html            board (lane L2)
 state/rooms/<KEY>.json   một file mỗi phòng
 state/company.json       trạng thái chung (chìa khoá app)
+state/tasks.json         thẻ việc (task): Backlog / Todo trên board
+state/retros/<KEY>.md    bài rút kinh nghiệm của phòng đã xong (board link ở tab Done)
 state/events.jsonl       sổ sự kiện, mỗi dòng một JSON
 state/heartbeat.json     dấu chống báo lặp của nhịp kiểm · heartbeat.pid · heartbeat.log
 data/board.js            `window.BOARD = <snapshot>;` — company.py sinh lại sau MỖI lần ghi (cho board mở bằng file://)
@@ -102,6 +104,13 @@ rebase sạch; `ask reopen` gỡ cả các cổng kèm. Trường `alsoGates: [5
 - Choice `khac` (và `tra-loi` của ask cũ) **bắt buộc có note không trống** — CLI và server từ chối, board chặn trước.
 - Ask cũ lưu `options: []`: `quyet` được hiểu là `tra-loi` ("Gửi câu trả lời"), để còn trả lời được.
 
+**Câu của thẻ việc** (chốt 17/10/2026): câu Sếp phải chọn khi việc còn là thẻ Backlog/Todo, chưa có phòng (ví dụ câu
+cuối báo cáo nghiên cứu). `ask add --task <ID>` thay cho KEY: thẻ phải tồn tại và `room` null. ASK lưu ngay trong thẻ
+(`tasks.json`, trường `asks`) với `"room": null, "task": "T5"`, id = `<ID>-q<n>` (ví dụ `T5-q1`), n tăng theo thẻ.
+Không có cổng: `--gate`/`--also-gate` và kind `duyet` bị từ chối; còn lại (kind `quyet`/`thaotac`, options, recommend,
+context, link, resolve, cancel, reopen, `list --open`) y như ask của phòng. Sự kiện `ask_*` của câu thẻ có `room: null`
+và trường `task`. `ask reopen` từ chối khi thẻ đã mở phòng (hỏi lại qua phòng).
+
 `ask cancel ID [--note]`: Manager rút ask đang mở (ví dụ thay câu hỏi mở bằng câu có phương án) ⇒ `status: cancelled`,
 khỏi "Việc của anh", sự kiện `ask_cancelled`.
 
@@ -141,6 +150,24 @@ Chìa khoá app: chỉ một phòng được chạy app thật (DB 5432, server 
   cũng nhả + chuyển (`keyHandedTo`) và rút phòng khỏi hàng.
 - `key take KEY` khi phòng khác giữ ⇒ exit 3 (giữ cho script cũ).
 
+## `state/tasks.json` — thẻ việc
+
+Ý tưởng Sếp nêu nhưng chưa mở phòng (chốt 16/10/2026). Thẻ là state cấp công ty, không thuộc phòng nào.
+
+```json
+{ "nextId": 4,                          // chỉ tăng: thẻ đã xoá không nhường số
+  "tasks": [ { "id": "T3", "title": "Giao lưu đội", "note": "…"|null,
+               "column": "backlog",     // backlog (để đó) | todo (Sếp đã cho làm, chờ mở phòng)
+               "room": null,            // KEY phòng khi đã mở phòng từ thẻ (task start)
+               "asks": [ ASK ],         // câu của thẻ (ask add --task), có thể thiếu ở thẻ cũ
+               "createdAt": "…", "updatedAt": "…" } ] }
+```
+
+`task start` bị từ chối (exit 2, liệt kê id) khi thẻ còn ask `open` — trả lời hoặc `ask cancel` trước; ask đã trả lời/huỷ
+ở lại trong thẻ làm lịch sử. `open-room.sh --task` kiểm điều này trước khi tạo worktree.
+
+Thẻ có `room` khác null không còn ở Backlog/Todo: board hiện phòng đó ở Doing/Done; `task move` bị từ chối.
+
 ## `state/events.jsonl`
 
 Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. Sự kiện cấp công ty có `"room": null`
@@ -148,7 +175,11 @@ Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. S
 
 `room_opened` · `room_changed` (step/links/roles…) · `room_done` · `lane_changed` · `ask_opened` · `ask_resolved` · `ask_reopened` · `ask_cancelled` · `forward_failed`
 (có `via`, `choice`, `note`) · `bug_opened` · `bug_changed` (có `status`, `assignee`) · `key_requested` · `key_taken` · `key_released` (có `handedTo`) ·
-`overlap` · `evidence` · `note` · `lane_stale` (`handle`, `role`, `minutes`) · `thu_ky_silent` (`room: null`, `minutes`)
+`overlap` · `evidence` · `note` · `lane_stale` (`handle`, `role`, `minutes`) · `thu_ky_silent` (`room: null`, `minutes`) ·
+`task_added` · `task_changed` (`change`: `move` | `edit` | `start`) · `task_removed`
+— sự kiện thẻ việc luôn `room: null`, mang `taskId`, `title`, `column`, `linkedRoom` (KEY phòng hoặc null) ·
+`task_ask_answered` (`room: null`, `task`, `askId`, `choice`, `note`) — board server ghi khi Sếp trả lời câu của thẻ trên
+board (thay cho chuyển Orca); `ask resolve` từ CLI không ghi
 
 `lane_changed` của `lane add --force-gate` (lane dev-web mở trước cổng 3) có thêm `forceGate: true` và `note`.
 
@@ -167,16 +198,24 @@ lane add KEY --role R --handle H [--model M] [--force-gate]
 lane set KEY --handle H --status running|waiting|done|closed [--note N]
 ask add KEY --kind duyet|quyet|thaotac [--gate N] --title T [--context C] [--option k=label]... [--recommend k] [--link L]...
             # in ra id. kind=duyet mà không có --option ⇒ mặc định ok=Duyệt, sua=Cần sửa
+ask add --task ID --kind quyet|thaotac --title T [...như trên, không --gate]   # câu của thẻ chưa mở phòng ⇒ ID-qN
+            # đúng một trong KEY / --task, thiếu hoặc cả hai ⇒ exit 2
 ask resolve ID --choice k [--note N] [--via terminal|board|thu-ky]
 ask reopen ID [--note N]                                  # Sếp bấm nhầm; chỉ Thư ký chạy, theo lời Sếp
 ask cancel ID [--note N]                                  # Manager rút ask chưa ai trả lời
-ask list [--open] [--room KEY]
+ask list [--open] [--room KEY | --task ID]           # không lọc ⇒ câu của phòng rồi câu của thẻ
 bug add KEY --title T --area server|web [--steps S] [--shot P]... [--severity high|normal] [--needs-boss] --by ROLE
 bug set ID [--status S] [--assignee R] [--note N] --by ROLE    # S=deferred bắt buộc --note
 key request KEY [--reason R]   key take KEY   key release KEY [--note N]   key status
 overlap KEY --with OTHER --files a,b [--conflict]   # Thư ký ghi; --clear để xoá
 evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch
 note KEY "text"          # sự kiện tự do
+task add --title T [--note N] [--column backlog|todo]     # in id (T1, T2…); mặc định backlog
+task move ID --column backlog|todo                        # thẻ đã gắn phòng ⇒ exit 2
+task edit ID [--title T] [--note N]                       # --note '' xoá ghi chú
+task remove ID
+task start ID --room KEY  # gắn thẻ với phòng vừa mở (open-room.sh --task gọi); thẻ đã gắn ⇒ exit 2
+task show ID             task list [--column backlog|todo]   # --column: chỉ thẻ chưa gắn phòng của cột đó
 snapshot                 # in JSON snapshot (giống data/board.js)
 ```
 
@@ -185,8 +224,10 @@ snapshot                 # in JSON snapshot (giống data/board.js)
 ```json
 { "generatedAt": "…", "appKey": {…}|null, "keyQueue": [ … ],
   "rooms": [ ROOM, … ],                 // active trước, rồi done 7 ngày gần nhất
-  "myQueue": [ ASK|BUG(needsBoss), … ], // mọi ask open + bug needsBoss chưa closed/deferred, cũ nhất trước
-  "events": [ … 50 sự kiện mới nhất, mới nhất trước … ] }
+  "myQueue": [ ASK|BUG(needsBoss), … ], // mọi ask open (cả câu của thẻ) + bug needsBoss chưa closed/deferred, cũ nhất trước
+  "events": [ … 50 sự kiện mới nhất, mới nhất trước … ],
+  "tasks": [ TASK, … ],                 // mọi thẻ (kể cả đã gắn phòng), cũ nhất trước
+  "retros": [ "ATTEND", … ] }           // KEY có file state/retros/<KEY>.md
 ```
 
 ## `bin/board-server.py`
@@ -199,7 +240,12 @@ snapshot                 # in JSON snapshot (giống data/board.js)
   `http://127.0.0.1:<port>` hoặc `http://localhost:<port>`. Trả `{ok:true, ask}` hoặc `{ok:false, error}` + 4xx.
   Ghi xong, server **tự chuyển** vào terminal Manager (luồng riêng, không làm chậm nút): `orca terminal send` câu
   `Sếp trả lời <ID> (<title>): <choice> — <nhãn>[ — Ghi chú: <note>]`. Handle rỗng thì KHÔNG gọi Orca. Không chuyển được ⇒
-  sự kiện `forward_failed` `{askId, detail}` để Thư ký chuyển tay. Biến môi trường `ORCA` đổi đường dẫn Orca (test dùng chương trình giả).
+  sự kiện `forward_failed` `{askId, detail}` để Thư ký chuyển tay. Câu của thẻ (`task` khác null) KHÔNG gọi Orca, KHÔNG
+  `forward_failed`: server ghi `task_ask_answered` để Thư ký thức dậy. Biến môi trường `ORCA` đổi đường dẫn Orca (test dùng chương trình giả).
+- `POST /api/task` (cùng luật CSRF và giới hạn body như `/api/answer`) body `{"action":"add","title","note","column"}` ·
+  `{"action":"move","id","column"}` · `{"action":"edit","id","title","note"}` · `{"action":"remove","id"}` → gọi hàm
+  thẻ việc của `company.py`; trả `{ok:true, task}` hoặc `{ok:false, error}` + 4xx. Không có `start` (gắn phòng là việc của `open-room.sh`).
+- `GET /retros/<KEY>.md` → `state/retros/<KEY>.md` dạng `text/plain` (KEY theo luật KEY phòng, không có ⇒ 404)
 - `GET /api/health` → `{ok:true}`
 
 ## `bin/wait-event.sh`
@@ -227,6 +273,12 @@ Một file HTML tĩnh, không CDN, không build. Nguồn dữ liệu: thử `fet
 mới mỗi 5 s); thất bại ⇒ dùng `window.BOARD` từ `<script src="data/board.js">` (file://, làm mới bằng reload).
 Nút trả lời: có server ⇒ `POST /api/answer`; không ⇒ chép câu `company.py ask resolve <ID> --choice <k> --via board`
 vào clipboard và báo "đã chép, dán vào terminal Manager".
+
+Bố cục: "Việc của anh" trên cùng; dưới là hàng tab **Backlog · Todo · Doing · Done** có số đếm (mặc định Doing, nhớ tab
+bằng `localStorage`); "Nhật ký" dưới cùng. Backlog/Todo = thẻ chưa gắn phòng của cột đó (cũ nhất trước), ô thêm nhanh,
+nút chuyển cột và xoá (xác nhận trong trang) gọi `POST /api/task`; không có server ⇒ chép lệnh `company.py task …`.
+Câu của thẻ hiện trong "Việc của anh" như câu phòng, nhãn nguồn `<ID> · <tiêu đề thẻ>`; thẻ Backlog/Todo còn câu mở
+hiện huy hiệu "N câu chờ anh". Doing = phòng chưa `done`. Done = phòng `done` (trong snapshot), mới nhất trước, một dòng mỗi phòng + link retro.
 
 ## Vai trong phòng (để các skill viết khớp nhau)
 

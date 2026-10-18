@@ -5,6 +5,7 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -29,6 +30,11 @@ def answer_text(ask):
 def forward_answer(company, ask, orca=None):
     """Gửi câu trả lời Sếp bấm trên board vào terminal Manager — việc Thư ký từng phải thức dậy làm tay.
     Không gửi được thì ghi sự kiện forward_failed để Thư ký xử lý; trả (ok, chi tiết)."""
+    if ask.get('task'):
+        # Câu của thẻ chưa mở phòng: không có Manager nào để gửi — không gọi Orca, không forward_failed;
+        # ghi task_ask_answered để watcher của Thư ký thức dậy ghi câu trả lời vào thẻ / báo cáo nghiên cứu.
+        company.task_ask_answered(ask)
+        return True, 'task_ask_answered'
     handle = company.room(ask['room']).get('managerTerminal') or ''
     if not handle:
         # Handle rỗng: Orca gõ vào terminal KHÁC mà vẫn báo thành công — tuyệt đối không gọi.
@@ -69,6 +75,14 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self.send_json(200, self.server.company.snapshot())
             except (OSError, ValueError):
                 self.send_json(500, {'ok': False, 'error': 'Không đọc được trạng thái.'})
+        elif re.fullmatch(r'/retros/[A-Z0-9-]{2,24}\.md', path):
+            # Bài rút kinh nghiệm của phòng đã xong (link ở tab Done); KEY lọc bằng regex nên không thoát được thư mục.
+            try:
+                payload = (self.server.company.state / 'retros' / path.rsplit('/', 1)[1]).read_bytes()
+            except FileNotFoundError:
+                self.send_json(404, {'ok': False, 'error': 'Không tìm thấy retro.'})
+                return
+            self.send_bytes(200, payload, 'text/plain; charset=utf-8')
         elif path in ('/', '/board.html', '/data/board.js'):
             relative = 'data/board.js' if path == '/data/board.js' else 'board.html'
             try:
@@ -82,7 +96,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             self.send_json(404, {'ok': False, 'error': 'Không tìm thấy đường dẫn.'})
 
     def do_POST(self):
-        if urlsplit(self.path).path != '/api/answer':
+        path = urlsplit(self.path).path
+        if path not in ('/api/answer', '/api/task'):
             self.send_json(404, {'ok': False, 'error': 'Không tìm thấy đường dẫn.'})
             return
         port = self.server.server_address[1]
@@ -104,17 +119,36 @@ class BoardHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode('utf-8'))
             if not isinstance(body, dict):
                 raise UserError('Body phải là JSON object.')
-            ask = self.server.company.resolve_ask(body.get('askId'), body.get('choice'), body.get('note'), via='board')
+            if path == '/api/task':
+                result = {'ok': True, 'task': self.task_action(body)}
+            else:
+                ask = self.server.company.resolve_ask(body.get('askId'), body.get('choice'), body.get('note'),
+                                                      via='board')
+                result = {'ok': True, 'ask': ask}
         except (ValueError, UnicodeError, TimeoutError) as exc:
             self.send_json(400, {'ok': False, 'error': str(exc)})
             return
         except OSError:
             self.send_json(500, {'ok': False, 'error': 'Không ghi được trạng thái.'})
             return
-        self.send_json(200, {'ok': True, 'ask': ask})
+        self.send_json(200, result)
         forward = getattr(self.server, 'forward', None)
-        if forward:
-            forward(ask)
+        if path == '/api/answer' and forward:
+            forward(result['ask'])
+
+    def task_action(self, body):
+        """Nút thẻ việc trên board. Ghi qua hàm của company.py (cùng khoá, cùng sổ sự kiện như CLI).
+        Không có 'start': gắn thẻ với phòng là việc của open-room.sh, board không mở phòng."""
+        company, action = self.server.company, body.get('action')
+        if action == 'add':
+            return company.add_task(body.get('title'), body.get('note'), body.get('column', 'backlog'))
+        if action == 'move':
+            return company.move_task(body.get('id'), body.get('column'))
+        if action == 'edit':
+            return company.edit_task(body.get('id'), body.get('title'), body.get('note'))
+        if action == 'remove':
+            return company.remove_task(body.get('id'))
+        raise UserError('action phải là add, move, edit hoặc remove.')
 
 
 def make_server(port=8765, root=None):

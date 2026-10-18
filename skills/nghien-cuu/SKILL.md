@@ -39,11 +39,15 @@ những câu Sếp chọn (2–4 phương án + khuyến nghị + "Khác").
    Viết cho Sếp đọc ⇒ luật thuật ngữ áp dụng (giải thích trong ngoặc lần đầu mỗi mục).
 5. `open` file cho Sếp, báo một khối ngắn: đường dẫn, số câu cần quyết, khuyến nghị chính. File chưa commit — commit
    theo "Quy tắc Git" khi Sếp cho.
-6. **Sếp trả lời** ⇒ ghi câu trả lời vào cuối báo cáo (mục "Sếp đã chốt — ngày"), rồi mở phòng cho lát đầu
+6. **Sếp trả lời** — mỗi câu ở mục 7 tạo thêm một ask trên thẻ của việc (`company.py ask add --task <ID> --kind quyet
+   --title … --option a=… --option b=… --recommend a --link docs/product/nghien-cuu/<chu-de>.html`; chưa có thẻ ⇒
+   `task add` trước) để hiện trên board; báo cáo HTML vẫn liệt kê đủ. Sếp bấm trên board ⇒ sự kiện `task_ask_answered`.
+   Có câu trả lời ⇒ ghi câu trả lời vào cuối báo cáo (mục "Sếp đã chốt — ngày"), rồi mở phòng cho lát đầu
    (skill `thu-ky`, "Mở phòng"): ý tưởng truyền vào `open-room.sh` ghi rõ
    `Đầu vào: docs/product/nghien-cuu/<chu-de>.html — các câu 1..N Sếp đã chốt, không hỏi lại. Làm lát A.`
 
 ## Không làm
+- Không đăng báo cáo lên claude.ai Artifact — chỉ lưu trong project và `open` (CLAUDE.md W14, Sếp chốt 16/10).
 - Không hỏi Sếp trong lúc nghiên cứu — câu hỏi gom hết vào cuối báo cáo.
 - Không đặt bảng/cột cuối cùng thay Techlead: báo cáo là định hướng; phòng chốt chi tiết ở cổng 4.
 - Không nghiên cứu lại thứ Sếp đã chốt trong ADR — trích ADR thay vì bàn lại.

@@ -50,6 +50,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `ask_resolved`, `via=board` | Board server **đã tự chuyển** vào terminal Manager (từ 13/10). Không làm gì — watcher cũng không đánh thức vì loại này |
 | `forward_failed` | Board không chuyển được (Orca lỗi / phòng mất `managerTerminal`) ⇒ **chuyển tay** (bước 2), xem `detail` |
 | `ask_cancelled` | Không báo (Manager rút để thay câu khác) |
+| `task_ask_answered` | Sếp trả lời trên board câu của thẻ chưa mở phòng (`task`, `askId`, `choice`, `note`). Đọc câu trả lời (`C ask list --task <ID>`), ghi vào báo cáo nghiên cứu (mục "Sếp đã chốt") hoặc ghi chú thẻ (`C task edit`). `C ask list --open --task <ID>` rỗng (đủ câu) ⇒ mở phòng `bin/open-room.sh KEY "Tiêu đề" "Đầu vào: … các câu đã chốt" --task <ID>`. Chưa đủ ⇒ không báo |
 | `ask_resolved`, `via=terminal`/`thu-ky` | Không chuyển (Manager đã có, hoặc bạn đã chuyển lúc Sếp trả lời trong chat) |
 | `ask_opened` | Việc mới cho Sếp ⇒ báo. `gate` 5 hoặc 6 ⇒ kiểm số trước (bước 4) |
 | `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
@@ -161,7 +162,7 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 2. Ghi dấu: `wc -l < state/events.jsonl | tr -d ' ' > state/thu-ky.processed`
 3. Bash `run_in_background: true`, chỉ thức vì sự kiện cần phán đoán (lane đổi trạng thái, câu trả lời board đã tự chuyển, ask rút/mở lại thì không):
    ```bash
-   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,thu_ky_silent
+   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,task_ask_answered,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,thu_ky_silent
    ```
    Exit 0 in các dòng mới ⇒ vòng tiếp. Exit 2 = hết 4 giờ yên ắng ⇒ arm lại, không báo. Nhịp kiểm biết bạn còn canh
    nhờ thấy tiến trình `wait-event.sh` không lọc `--room` — không cần thức định kỳ để báo còn sống.
@@ -169,6 +170,13 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 
 ## Nghiên cứu — Sếp nói "nghiên cứu …" hoặc nêu tính năng lớn
 Đọc và làm theo `$CO/skills/nghien-cuu/SKILL.md` (bước 0, trước khi mở phòng). Việc nhỏ đã rõ ⇒ mở phòng thẳng.
+
+## Thẻ việc (Backlog/Todo trên board)
+Sếp nêu ý tưởng chưa làm ngay ⇒ `C task add --title "…" [--note "…"]` (Backlog); Sếp cho làm ⇒ `C task move ID --column todo`
+(hoặc `task add … --column todo`); mở phòng từ thẻ ⇒ `bin/open-room.sh KEY "Tiêu đề" "ý tưởng" --task ID`.
+Câu Sếp phải chọn khi việc còn là thẻ ⇒ `C ask add --task ID --kind quyet --title … --option a=… --option b=… --recommend a`
+(id `ID-qN`, hiện ở "Việc của anh"). Sếp trả lời trong chat ⇒ `C ask resolve ID-qN --choice k --via thu-ky` (không có
+`task_ask_answered`, tự xử lý luôn). Thẻ còn câu mở thì `task start` / `open-room.sh --task` từ chối: trả lời hoặc `ask cancel` trước.
 
 ## Mở phòng — Sếp chat "mở phòng: <ý tưởng>"
 1. Đặt KEY: chữ hoa/số/gạch ngang, 2–24 ký tự, ngắn và nói được việc (`ATTEND`, `TEAM-STATS`). Tiêu đề: một dòng tiếng Việt.
@@ -189,5 +197,6 @@ C key status                   C note KEY "…"                  C snapshot
 C overlap KEY --with OTHER --files a,b [--conflict]             # overlap.sh lo việc này
 C evidence KEY --claim C --manager M --thu-ky S --cmd CMD --ok|--mismatch
 $ORCA worktree ps --json        $ORCA terminal read --terminal <h> --screen --limit 40
-bin/open-room.sh KEY "Tiêu đề" ["ý tưởng"] [--dry-run]        bin/overlap.sh [--dry-run]
+C task add --title T [--note N] [--column backlog|todo]      C task move ID --column todo     C task list
+bin/open-room.sh KEY "Tiêu đề" ["ý tưởng"] [--task ID] [--dry-run]        bin/overlap.sh [--dry-run]
 ```
