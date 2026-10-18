@@ -9,7 +9,7 @@ Không sửa file này trong lane; thấy thiếu thì ghi vào báo cáo mục 
 bin/company.py        CLI duy nhất ghi state (lane L1)
 bin/board-server.py   server localhost: phục vụ board + nhận nút bấm (lane L1)
 bin/wait-event.sh     chờ sự kiện mới, có lọc theo phòng/loại (lane L1)
-bin/heartbeat.py      nhịp kiểm không dùng AI: lane đứng yên, Thư ký ngủ quên (open-board.sh bật nền)
+bin/heartbeat.py      nhịp kiểm không dùng AI: lane đứng yên, lane dừng ở lỗi, Thư ký ngủ quên (open-board.sh bật nền)
 bin/open-room.sh      mở phòng: worktree + env + terminal Manager (lane L4); `--task ID` gắn thẻ việc với phòng
 board.html            board (lane L2)
 state/rooms/<KEY>.json   một file mỗi phòng
@@ -176,6 +176,7 @@ Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. S
 `room_opened` · `room_changed` (step/links/roles…) · `room_done` · `lane_changed` · `ask_opened` · `ask_resolved` · `ask_reopened` · `ask_cancelled` · `forward_failed`
 (có `via`, `choice`, `note`) · `bug_opened` · `bug_changed` (có `status`, `assignee`) · `key_requested` · `key_taken` · `key_released` (có `handedTo`) ·
 `overlap` · `evidence` · `note` · `lane_stale` (`handle`, `role`, `minutes`) · `thu_ky_silent` (`room: null`, `minutes`) ·
+`lane_error` (`handle`, `role` — `manager` nếu là terminal Manager — `line`: dòng lỗi khớp, ≤ 200 ký tự) ·
 `task_added` · `task_changed` (`change`: `move` | `edit` | `start`) · `task_removed`
 — sự kiện thẻ việc luôn `room: null`, mang `taskId`, `title`, `column`, `linkedRoom` (KEY phòng hoặc null) ·
 `task_ask_answered` (`room: null`, `task`, `askId`, `choice`, `note`) — board server ghi khi Sếp trả lời câu của thẻ trên
@@ -261,9 +262,16 @@ không dùng AI. Mỗi lượt, với mỗi phòng active:
 - lane `running` có `updatedAt` cũ hơn `--stale-minutes` **và** phòng không có sự kiện nào (trừ sự kiện của chính nhịp
   kiểm) trong cùng khoảng ⇒ `Company.record('lane_stale', {handle, role, minutes}, room)`;
 - không có tiến trình `wait-event.sh` nào không lọc `--room` (watcher của Thư ký) liên tục quá `--thu-ky-minutes` ⇒
-  `thu_ky_silent` cấp công ty (mốc bắt đầu lưu ở `heartbeat.json`; test thay `ps` bằng `HEARTBEAT_PS_FILE`).
+  `thu_ky_silent` cấp công ty (mốc bắt đầu lưu ở `heartbeat.json`; test thay `ps` bằng `HEARTBEAT_PS_FILE`);
+- mỗi lane `running` và `managerTerminal` (handle rỗng ⇒ bỏ qua): `$ORCA terminal read --terminal <h> --screen --limit 30`
+  (đọc lỗi ⇒ bỏ qua). 12 dòng cuối khác rỗng có dòng khớp `ERROR_PATTERNS` (không phân biệt hoa thường: `model is at
+  capacity`, `API Error`, `Connection lost`, `response stopped arriving`, `stream disconnected`, `network error`,
+  `ECONNRESET`, `fetch failed`, `rate limit`) **và** màn hình không có `esc to interrupt` / `Working (` ⇒
+  `Company.record('lane_error', {handle, role, line}, room)` ngay lượt đó (không chờ ngưỡng). Chống lặp: dấu
+  `errors["ROOM/handle"] = {line, screen}` (băm 12 dòng cuối) ở `heartbeat.json`; chỉ báo lại khi dòng lỗi hay đáy màn
+  hình đổi; hết lỗi thì xoá dấu, đọc lỗi thì giữ dấu. Biến `ORCA` thay Orca CLI (test dùng orca giả).
 
-Không báo lặp: cùng (room, handle) — hay Thư ký — chỉ báo lại khi đã qua thêm một ngưỡng kể từ lần báo trước;
+`lane_error` không tính là phòng còn hoạt động (như hai loại kia). Không báo lặp: cùng (room, handle) — hay Thư ký — chỉ báo lại khi đã qua thêm một ngưỡng kể từ lần báo trước;
 dấu ở `state/heartbeat.json`. Lane hết `running` thì xoá dấu. `--now` (chỉ kèm `--once`) giả giờ cho test.
 `bin/open-board.sh` bật nó nền (nohup, `state/heartbeat.log`) nếu `state/heartbeat.pid` không trỏ tới tiến trình đang chạy.
 

@@ -63,7 +63,9 @@ phòng, thư viện mới hay bảng/cột. Manager tự phân loại; giữa ch
 
 ⛔ **Hồ sơ gọn** (Sếp duyệt 13/10 — một đợt từng viết 250–890 KB chữ mỗi phòng, nhiều chỗ chép lặp):
 - `spec.md` CHỈ là nhật ký câu đã chốt (một dòng mỗi câu). Luật nghiệp vụ chỉ nằm ở `docs/features/<tên>.md` — không chép.
-- Brief lane TRỎ tới file có sẵn (`techlead.md` mục…, `docs/features` mục…), không chép lại nội dung.
+- Brief lane TRỎ tới file có sẵn (`techlead.md` mục…, `docs/features` mục…), không chép lại nội dung. **Ngoại lệ (Sếp
+  chốt 18/10, lệch ở RANKING + GIAO-LUU):** câu Sếp chọn và dòng luật mà lượt đó làm theo ⇒ CHÉP NGUYÊN VĂN vào mục
+  "Quyết định của Sếp" của brief dev-web/dev-server, kèm id (vd `GIAO-LUU-a15: …`). Không tóm tắt, không diễn giải.
 - Báo cáo lane ≤ 40 dòng: làm gì, số test, chỗ còn nghi ngờ. Báo cáo QA là markdown ngắn, không HTML.
 - Không tạo file mới khi một mục trong file có sẵn đủ chỗ.
 - `C room set $KEY --link spec=$R/spec.md --link featureDoc=docs/features/<tên>.md`
@@ -108,6 +110,11 @@ Ghi quyết định vào `$R/NHAT-KY.md`.
 Trình trong một ask (`--kind duyet --gate 1`): phạm vi (làm / cố ý không làm), vai cần dùng (việc chỉ server ⇒ không
 Designer, không dev-web), có cần chìa khoá app không, rủi ro đụng phòng khác (`C room list`).
 Sau khi `ok`: `C room set $KEY --roles designer,techlead,… --needs-app-key yes|no --step thiet-ke`.
+
+⛔ Gói phòng (cổng 1) phải nêu sẵn mọi **dịch vụ có phí, dịch vụ bên ngoài, thư viện mới** mà phạm vi có thể cần
+(SMS/OTP, kho ảnh, bản đồ…) thành ask `quyet` cùng lượt với cổng 1 — Sếp chốt 18/10 sau khi GIAO-LUU đổi OTP sau
+thiết kế làm Techlead phải làm lại. Chưa biết giá ⇒ ghi "Techlead khảo sát giá ở cổng 4" nhưng vẫn hỏi Sếp có chịu
+dùng dịch vụ có phí hay không.
 
 ## 5. Mở lane — Orca terminal trong worktree này
 
@@ -210,6 +217,11 @@ Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo c
 - Rồi dev-server + dev-web song song (file rời nhau). Thứ tự W7: Entity → Repository → Service → Controller → Test;
   test trong code bắt buộc (C9). Migration: `V<số kế tiếp trên nhánh>__<desc>.sql`, số chốt lại lúc gộp (mục 11).
 
+**Lane chết lặng** (Thư ký nhắn `lane <role> báo lỗi: …`, hoặc màn lane có `model is at capacity`, `API Error`,
+`Connection lost`): gửi `tiếp tục` vào lane; at capacity ⇒ đóng lane, mở lại cùng brief với model kia
+(`gpt-6-astra` ↔ `gpt-6.1-sol`). Lane chờ lane con (Designer chờ lane ảnh) ⇒ Manager tự đọc màn lane con mỗi lần
+thức dậy, không tin mỗi file `.done`.
+
 ## 8. Vòng lỗi (step `test`)
 
 Skill `triage` (plugin mattpocock-skills) để xếp lỗi: sửa trong phòng, dời backlog, hay hỏi Sếp.
@@ -280,6 +292,7 @@ migration/docs) ⇒ tách lại: ask cổng 5 trước rồi cổng 6. Chỉ khi
 git -C /Users/tien/Claude/sportshub status --porcelain      # có thay đổi tracked ở repo gốc ⇒ DỪNG, hỏi Sếp
 git -C /Users/tien/Claude/sportshub merge --ff-only phong/$k
 git -C /Users/tien/Claude/sportshub push
+C key release $KEY 2>/dev/null || true             # gộp xong là nhả chìa khoá app ngay (HALL kẹt 1 giờ vì quên)
 make -C /Users/tien/Claude/sportshub qa-drop KEY=$k        # xoá DB QA riêng sportshub_<key> của phòng (Makefile của main đã có qa-drop)
 C room done $KEY                     # in lệnh dọn — đóng lane trước, lệnh xoá worktree chạy CUỐI (nó đóng luôn terminal này)
 ```
@@ -303,7 +316,10 @@ Bảng "KHÔNG BAO GIỜ commit" trong `CLAUDE.md` vẫn áp: `git diff --cached
 ## 13. Kiểm chứng — một lần, trên bản cuối
 
 - Lane tự chạy test phần mình đụng. Manager KHÔNG chạy lại toàn bộ sau mỗi lane — chỉ kiểm `git status --porcelain`
-  khớp file lane báo (sửa ngoài "Files You May Edit" ⇒ trả lại) và xem màn (1440 + 390) khi có giao diện.
+  khớp file lane báo (sửa ngoài "Files You May Edit" ⇒ trả lại) và xem màn khi có giao diện.
+- ⛔ Sau MỖI lượt dev-web (kể cả lượt sửa CSS), TRƯỚC khi giao QA: Manager tự mở màn bằng plugin Playwright ở
+  390, 820, 1440 (tràn ngang, chữ chưa dịch, lệch lab). Dev-web (codex) không có trình duyệt — bốn phòng liền lỗi bố cục
+  chỉ lộ ở QA. Thấy lệch ⇒ trả dev-web luôn, không mở bug QA.
 - `make check` toàn bộ chạy MỘT lần ở mục 11, sau rebase; lưu log `$R/check-<sha>.log` (Thư ký đọc log này + SHA,
   chỉ chạy lại khi SHA lệch hoặc log bất thường). Số trình Sếp lấy từ log đó.
 - Review độc lập MỘT lần trước gộp (lane `review`, mục 10); vòng sửa lỗi chỉ soi phần sửa và nơi bị ảnh hưởng.

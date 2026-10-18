@@ -584,6 +584,17 @@ class HeartbeatTests(unittest.TestCase):
         self.ps = self.root / 'ps.txt'
         self.ps.write_text('/bin/bash bin/wait-event.sh --timeout 14400\n')
         self.env['HEARTBEAT_PS_FILE'] = str(self.ps)
+        # Orca giả: in màn hình từ screens/<handle>.txt, không có file ⇒ lỗi như handle chết. Không bao giờ đụng Orca thật.
+        self.screens = self.root / 'screens'
+        self.screens.mkdir()
+        self.orca_log = self.root / 'orca.log'
+        orca = self.root / 'orca'
+        orca.write_text('#!/bin/sh\n'
+                        f'echo "$*" >> "{self.orca_log}"\n'
+                        f'[ -f "{self.screens}/$4.txt" ] || {{ echo "no terminal $4" >&2; exit 1; }}\n'
+                        f'cat "{self.screens}/$4.txt"\n')
+        orca.chmod(0o755)
+        self.env['ORCA'] = str(orca)
         self.cli('room', 'new', 'ATTEND', '--title', 'Có mặt')
         self.cli('lane', 'add', 'ATTEND', '--role', 'qa', '--handle', 'term_qa')
         self.start = datetime.now(timezone(timedelta(hours=7)))
@@ -688,6 +699,71 @@ class HeartbeatTests(unittest.TestCase):
         self.assertEqual((thu_ky.returncode, json.loads(output)['type']), (0, 'thu_ky_silent'))
         output, _ = manager.communicate(timeout=5)
         self.assertEqual((manager.returncode, output), (2, ''))            # room null không đánh thức Manager
+
+    def screen(self, handle, *lines):
+        (self.screens / f'{handle}.txt').write_text('\n'.join(lines) + '\n')
+
+    def test_lane_stopped_at_error_is_reported_once_until_screen_changes(self):
+        capacity = '■ Selected model is at capacity. Please try a different model.'
+        self.screen('term_qa', 'Đã sửa xong 3 file', capacity, '', '› Ask Codex to do anything', '  gpt-6-astra · 80% left')
+        self.beat(1)
+        errors = self.events('lane_error')
+        self.assertEqual(len(errors), 1)
+        self.assertEqual({k: errors[0][k] for k in ('room', 'handle', 'role', 'line')},
+                         {'room': 'ATTEND', 'handle': 'term_qa', 'role': 'qa', 'line': capacity})
+        self.assertEqual(self.board()['events'][0]['type'], 'lane_error')
+        self.assertIn('terminal read --terminal term_qa --screen --limit 30', self.orca_log.read_text())
+        self.beat(2)
+        self.assertEqual(len(self.events('lane_error')), 1)                # màn hình y nguyên ⇒ không báo lặp
+        self.screen('term_qa', capacity, '› tiếp tục', capacity, '› Ask Codex to do anything')
+        self.beat(3)
+        self.assertEqual(len(self.events('lane_error')), 2)                # đã thử lại mà lỗi tiếp ⇒ báo lại
+        self.screen('term_qa', 'Đang đọc file…', '› Ask Codex to do anything')
+        self.beat(4)
+        self.assertEqual(self.events('lane_error')[2:], [])                # hết lỗi ⇒ bỏ dấu
+        self.assertNotIn('ATTEND/term_qa', json.loads((self.root / 'state/heartbeat.json').read_text())['errors'])
+        self.screen('term_qa', 'Đã sửa xong 3 file', capacity, '', '› Ask Codex to do anything', '  gpt-6-astra · 80% left')
+        self.beat(5)
+        self.assertEqual(len(self.events('lane_error')), 3)                # lỗi quay lại ⇒ báo như mới
+
+    def test_busy_screen_old_error_or_unreadable_terminal_is_not_reported(self):
+        self.screen('term_qa', 'API Error: The response stopped arriving', '✻ Retrying… (esc to interrupt)')
+        self.beat(1)
+        self.screen('term_qa', 'stream disconnected before completion', '• Working (12s • esc to interrupt)')
+        self.beat(2)
+        self.screen('term_qa', 'API Error: Connection lost mid-response', *[f'dòng {i}' for i in range(12)])
+        self.beat(3)                                                       # lỗi đã trôi khỏi 12 dòng cuối
+        (self.screens / 'term_qa.txt').unlink()
+        self.beat(4)                                                       # orca đọc lỗi ⇒ bỏ qua, nhịp vẫn chạy
+        self.env['ORCA'] = str(self.root / 'khong-co-orca')
+        self.beat(5)
+        self.assertEqual(self.events('lane_error'), [])
+
+    def test_manager_terminal_is_checked_and_non_running_lane_is_not_read(self):
+        self.cli('room', 'set', 'ATTEND', '--manager-terminal', 'term_mgr')
+        self.cli('lane', 'set', 'ATTEND', '--handle', 'term_qa', '--status', 'waiting')
+        self.screen('term_mgr', '⎿  API Error: Connection lost mid-response', '', '> ', '  ⏵⏵ bypass permissions on')
+        self.screen('term_qa', 'Error: fetch failed')
+        self.beat(1)
+        errors = self.events('lane_error')
+        self.assertEqual([(e['handle'], e['role'], e['line']) for e in errors],
+                         [('term_mgr', 'manager', '⎿  API Error: Connection lost mid-response')])
+        self.assertNotIn('term_qa', self.orca_log.read_text())             # lane không running ⇒ không đọc
+        path = self.root / 'state/rooms/ATTEND.json'
+        room = json.loads(path.read_text())
+        room['managerTerminal'] = ''
+        path.write_text(json.dumps(room))
+        self.orca_log.unlink()
+        self.beat(2)
+        self.assertFalse(self.orca_log.exists())                           # handle rỗng ⇒ không gọi Orca
+
+    def test_lane_error_does_not_hide_stale_lane(self):
+        self.age_lane(120)
+        self.screen('term_qa', 'ECONNRESET')
+        self.beat(50)
+        self.beat(51)
+        self.assertEqual(len(self.events('lane_error')), 1)
+        self.assertEqual(len(self.events('lane_stale')), 1)
 
     def test_invalid_arguments(self):
         for args in (['--now', 'không phải giờ'], ['--stale-minutes', '0'], ['--interval', '-1']):

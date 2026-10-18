@@ -24,6 +24,9 @@ Cần file khác ⇒ `## Blocked On`, không tự sửa.
 - Khi cần mẫu React/TypeScript chung: `.claude/skills/react-expert/SKILL.md`, `.claude/skills/typescript-pro/SKILL.md`
   (đọc khối "⛔ ĐỌC KHỐI NÀY TRƯỚC").
 
+## Quyết định của Sếp (chép NGUYÊN VĂN, kèm id — không tóm tắt)
+<mỗi dòng: `<KEY>-aN: <nguyên văn câu Sếp chọn>` · và dòng luật trong docs/features mà màn này phải theo>
+
 ## Problem
 <việc lượt này: màn nào, theo nghiem-thu + lab đã qua cổng 3, API theo techlead.md đã qua cổng 4;
 hoặc "sửa lỗi <ID>: bước tái hiện …">

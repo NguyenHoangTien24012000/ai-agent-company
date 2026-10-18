@@ -19,6 +19,9 @@ Cần file khác ⇒ `## Blocked On`, không tự sửa.
 - `.claude/skills/jpa-patterns/SKILL.md` — entity, N+1, giao dịch (đọc khối "⛔ ĐỌC KHỐI NÀY TRƯỚC" trước).
 - Có migration: `.claude/skills/flyway-migrations/SKILL.md`. Đụng vị trí: `.claude/skills/postgis/SKILL.md`.
 
+## Quyết định của Sếp (chép NGUYÊN VĂN, kèm id — không tóm tắt)
+<mỗi dòng: `<KEY>-aN: <nguyên văn>`>
+
 ## Problem
 <việc lượt này: theo techlead.md mục …, hoặc "sửa lỗi <ID>: bước tái hiện …">
 Đầu vào: `.scratch/<key>/techlead.md` (đã qua cổng 4 — làm ĐÚNG nó), `docs/features/<tên>.md`, `.scratch/<key>/qa-plan.md`.

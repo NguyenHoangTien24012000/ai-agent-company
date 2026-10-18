@@ -151,7 +151,7 @@ python3 bin/company.py room list [--all]          python3 bin/company.py room sh
 python3 bin/company.py ask list --open            python3 bin/company.py ask resolve ID --choice ok --via thu-ky
 python3 bin/company.py key status
 python3 bin/company.py room done KEY              # in lệnh dọn worktree, không tự chạy
-bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,thu_ky_silent   # Thư ký chạy nền
+bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,lane_error,thu_ky_silent   # Thư ký chạy nền
 bin/wait-event.sh --room KEY                      # Manager chạy nền
 ```
 
@@ -160,7 +160,8 @@ bin/wait-event.sh --room KEY                      # Manager chạy nền
 - **Nhịp dự phòng là `bin/heartbeat.py`** — script thường, không dùng AI, `open-board.sh` bật nền mỗi 15 phút
   (`state/heartbeat.pid`, log `state/heartbeat.log`). Lane `running` đứng yên quá 45 phút trong một phòng không ghi
   sự kiện nào ⇒ sự kiện `lane_stale`; không còn tiến trình watcher của Thư ký
-  (`wait-event.sh` không lọc `--room`) quá 30 phút ⇒ `thu_ky_silent`. Không báo lặp (chỉ báo lại sau thêm một ngưỡng). Watcher của Thư ký thức vì hai loại này: đọc màn
+  (`wait-event.sh` không lọc `--room`) quá 30 phút ⇒ `thu_ky_silent`; màn hình lane `running` hay terminal Manager dừng ở dòng lỗi API/mạng ("at capacity", "API Error"…)
+  ⇒ `lane_error` ngay lượt đó (tối đa ~15 phút sau lỗi). Không báo lặp (chỉ báo lại sau thêm một ngưỡng; `lane_error` khi màn hình đổi). Watcher của Thư ký thức vì các loại này: đọc màn
   hình lane, kẹt thì nhắn Manager; im lặng thì xử lý sự kiện dồn. Giới hạn còn lại: nhịp kiểm chỉ thấy *dấu hiệu*
   (đứng yên, file cũ), không biết lane đang nghĩ lâu hay kẹt thật; Thư ký chết hẳn thì `thu_ky_silent` chỉ hiện trên
   board, không ai thức để xử lý tới khi anh mở lại phiên Thư ký. Nhịp kiểm chỉ chạy khi máy thức và đã chạy `open-board.sh`.
