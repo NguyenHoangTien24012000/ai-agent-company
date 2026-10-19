@@ -1,6 +1,6 @@
 ---
 name: phong-manager
-description: Vòng làm việc của Manager — phiên Claude chính trong worktree của một phòng (một tính năng) của công ty agent SportsHub. Dùng khi phiên được mở bằng `/phong-manager <KEY> …`, khi thức dậy trong worktree `~/orca/workspaces/sportshub/<key>`, sau MỖI `/clear` hay compact trong worktree đó, khi nhận câu trả lời của Sếp (gõ terminal hoặc Thư ký chuyển từ board), khi watcher báo lane xong / lỗi mới. Lo trọn: hỏi đáp Sếp, gói phòng, mở lane Designer/Techlead/QA/dev/Review, sáu cổng duyệt, vòng lỗi, chìa khoá app, gộp vào main.
+description: Vòng làm việc của Manager — phiên Claude chính trong worktree của một phòng (một tính năng) của công ty agent SportsHub. Dùng khi phiên được mở bằng `/phong-manager <KEY> …`, khi thức dậy trong worktree `~/orca/workspaces/sportshub/<key>`, sau MỖI `/clear` hay compact trong worktree đó, khi nhận câu trả lời của Sếp (gõ terminal hoặc Thư ký chuyển từ board), khi watcher báo lane xong / lỗi mới. Lo trọn: hỏi đáp Sếp, gói phòng, mở lane Designer/Techlead/QA/dev/Review, sáu cổng duyệt, vòng lỗi, chạy app thật trên cổng riêng của phòng, gộp vào main.
 ---
 
 # Manager phòng
@@ -25,10 +25,9 @@ Làm ĐẦU TIÊN, trước mọi việc khác, kể cả khi tưởng mình cò
 
 ```bash
 pwd && git branch --show-current                 # phải là worktree phòng, nhánh phong/<key>
-C room show $KEY --json                         # step, gates, lanes, asks open, bugs, appKey
+C room show $KEY --json                         # step, gates, lanes, asks open, bugs
 ls -R $R 2>/dev/null; cat $R/NHAT-KY.md 2>/dev/null
 C ask list --open --room $KEY
-C key status
 git log --oneline main..HEAD
 ```
 
@@ -108,8 +107,8 @@ Ghi quyết định vào `$R/NHAT-KY.md`.
 ## 4. Gói phòng — cổng 1
 
 Trình trong một ask (`--kind duyet --gate 1`): phạm vi (làm / cố ý không làm), vai cần dùng (việc chỉ server ⇒ không
-Designer, không dev-web), có cần chìa khoá app không, rủi ro đụng phòng khác (`C room list`).
-Sau khi `ok`: `C room set $KEY --roles designer,techlead,… --needs-app-key yes|no --step thiet-ke`.
+Designer, không dev-web), rủi ro đụng phòng khác (`C room list`).
+Sau khi `ok`: `C room set $KEY --roles designer,techlead,… --step thiet-ke`.
 
 ⛔ Gói phòng (cổng 1) phải nêu sẵn mọi **dịch vụ có phí, dịch vụ bên ngoài, thư viện mới** mà phạm vi có thể cần
 (SMS/OTP, kho ảnh, bản đồ…) thành ask `quyet` cùng lượt với cổng 1 — Sếp chốt 18/10 sau khi GIAO-LUU đổi OTP sau
@@ -238,34 +237,37 @@ C bug set <ID> --status deferred --note "<dòng backlog / commit ghi backlog>" -
 Rồi nhắn QA test lại đúng ca. **Chỉ QA đóng** (`--status closed --by qa`). Lỗi cần quyết hành vi ⇒ QA dùng
 `--needs-boss`, Manager mở `C ask add $KEY --kind quyet …` và hỏi Sếp như mục 3.
 
-## 9. Chìa khoá app
+## 9. App thật — cổng riêng của phòng
 
-Chạy app thật (server 8080, web 5173) chỉ khi giữ chìa khoá — trên DB RIÊNG của phòng, không đụng DB `sportshub` của Sếp:
+Mỗi phòng chạy app thật trên DB RIÊNG `sportshub_<k>` và một CẶP CỔNG RIÊNG, nên nhiều phòng test cùng lúc — không
+còn chìa khoá app (bỏ 18/10, phòng PORTS; `C key …` còn đó nhưng không dùng nữa). Repo gốc của Sếp vẫn 8080/5173.
 
 ```bash
-C key request $KEY --reason "<vì sao>"   # trống ⇒ nhận luôn; phòng khác giữ ⇒ xếp hàng, làm việc khác
-make qa-up KEY=$k        # CHỈ khi `key status` cho thấy phòng mình giữ: tạo DB sportshub_<k>, chạy server + web
-make qa-down KEY=$k && C key release $KEY   # ngay khi xong lượt test — còn phòng chờ thì chìa khoá tự chuyển sang họ
+make qa-up KEY=$k        # tạo DB nếu chưa có, chọn cặp cổng, chạy nền server + web; in cổng khi sẵn sàng
+cat $R/qa/ports.env     # SERVER_PORT, WEB_PORT của phòng — nguồn sự thật để biết cổng (curl, Playwright)
+make qa-down KEY=$k      # ngay khi xong lượt test — tắt đúng PID phòng mình bật
 ```
+
+Cổng suy ra từ KEY (server `8100–8199`, web `5200–5299`, cùng số đuôi); bận thì `qa-up` tự dò cặp kế và ghi lại vào
+`ports.env`, lần sau dùng lại. Ép tay: `make qa-up KEY=$k SERVER_PORT=81xx WEB_PORT=52xx`. Đăng nhập Google không chạy
+trên cổng phòng (Client ID chỉ cho 5173) — test bằng `dev-token.py`.
 
 ⛔ KHÔNG BAO GIỜ `make dev` / `make stop` trong worktree phòng: `make dev` đụng tên container DB, `make stop` giết theo
 cổng (cả lab 5174 của phòng khác) và tắt container DB dùng chung. `qa-down` chỉ tắt đúng PID phòng mình bật.
 
-Thư ký điều phối chìa khoá giữa các phòng, nhắn vào terminal này:
-- *"phòng X cần chìa khoá…"* ⇒ không ai trong phòng còn chạy app ⇒ `make qa-down KEY=$k && C key release $KEY` ngay;
-  còn cần (QA đang dở lượt) ⇒ trả lời Thư ký ước lượng bao lâu, xong thì nhả. Không ôm chìa khoá khi không chạy app.
-- *"phòng bạn đã có chìa khoá"* ⇒ giao lượt test đang chờ cho QA.
-
-Lượt test của QA: QA tự `key request`/`qa-up`/`qa-down`/`release` theo `phong-qa`; ai nhận thì người đó nhả.
-Thiết kế, lab, test Testcontainers không cần chìa khoá. Lab chạy cổng riêng của phòng và báo
-`C note $KEY "đang chạy lab <cổng>"`; hai phòng không dùng chung một cổng lab.
+Lượt test của QA: QA tự `qa-up`/`qa-down` theo `phong-qa`; ai bật thì người đó tắt. Thiết kế, lab, test
+Testcontainers không cần app thật. Lab chạy cổng riêng của phòng và báo `C note $KEY "đang chạy lab <cổng>"`; hai phòng
+không dùng chung một cổng lab, và lab không dùng dải `5200–5299`.
 
 ## 10. Review — song song với QA
 
 Dev báo xong code (hết bước `code`) ⇒ mở lane MỚI `review` (Claude opus, skill `phong-review`) NGAY, cùng lúc QA test
 trên app (mục 8) — không chờ QA xong (Sếp chốt 16/10). Không dùng lại lane Techlead. Đọc `$R/review.md`.
 Lỗi của QA và 🔴 của Review đi chung một hàng sửa cho dev; bản sửa sau đó Review chỉ soi phần sửa (mục 13).
-Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lane review soi lại diff mới). Hết 🔴 và QA xong ⇒
+Còn 🔴 ⇒ giao dev sửa ⇒ mở review lại (lane mới hoặc nhắn lane review soi lại diff mới). ⛔ Vòng 3 vẫn còn 🔴 ⇒ KHÔNG
+mở vòng 4: dừng, `C ask add $KEY --kind quyet --title "Review vòng 3 vẫn còn 🔴 — làm sao?"` với context nguyên văn các
+🔴 còn lại, 🔴 nào lặp lại / mới sinh ra do bản sửa; phương án: sửa thêm một vòng · chấp nhận ghi backlog · thu nhỏ phạm vi
+· Khác (Sếp chốt 19/10). Hết 🔴 và QA xong ⇒
 `C room set $KEY --link qaReport=$R/qa-report.md --link review=$R/review.md` rồi sang ngay mục 11 — KHÔNG trình
 cổng 5 riêng (cổng 5 + 6 gộp một lần duyệt, Sếp duyệt 13/10).
 
@@ -283,6 +285,9 @@ make check > $R/check-$(git rev-parse --short HEAD).log 2>&1   # MỘT lần; s�
 C room set $KEY --step cho-gop      # Thư ký thức, chạy lại make check, ghi evidence
 ```
 
+Trước khi trình: `gh run list --branch main --limit 1` ⇒ ghi trạng thái CI của main vào context (xanh/đỏ + link). Main đỏ
+do việc khác ⇒ vẫn trình, nói rõ; đừng coi "make check local xanh" là CI xanh (CI đỏ 27/09–18/10 không ai thấy).
+
 Ask MỘT lần: `C ask add $KEY --kind duyet --gate 6 --also-gate 5 --title "Check cuối + cho gộp lát …"` với context:
 **nguyên văn** dòng KẾT LUẬN + mọi 🔴/🟡 của review, tóm tắt QA (ca đạt/lỗi, bug mở/đóng), số test sau rebase, commit
 list (`git log --oneline main..HEAD`), danh sách "Đã tự quyết". Rebase phải sửa xung đột lớn (đổi logic, không chỉ số
@@ -292,7 +297,7 @@ migration/docs) ⇒ tách lại: ask cổng 5 trước rồi cổng 6. Chỉ khi
 git -C /Users/tien/Claude/sportshub status --porcelain      # có thay đổi tracked ở repo gốc ⇒ DỪNG, hỏi Sếp
 git -C /Users/tien/Claude/sportshub merge --ff-only phong/$k
 git -C /Users/tien/Claude/sportshub push
-C key release $KEY 2>/dev/null || true             # gộp xong là nhả chìa khoá app ngay (HALL kẹt 1 giờ vì quên)
+gh run list --branch main --limit 1     # CI của commit vừa push; theo dõi tới xong (gh run watch), note kết quả cho Thư ký
 make -C /Users/tien/Claude/sportshub qa-drop KEY=$k        # xoá DB QA riêng sportshub_<key> của phòng (Makefile của main đã có qa-drop)
 C room done $KEY                     # in lệnh dọn — đóng lane trước, lệnh xoá worktree chạy CUỐI (nó đóng luôn terminal này)
 ```

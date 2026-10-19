@@ -12,7 +12,7 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 KHÔNG sửa code, test trong code, `docs/`. Thấy lỗi thì BÁO, không sửa.
 
 ## Skill dùng ở bước này
-- `phong-qa` — quy trình QA của phòng (DB riêng, chìa khoá app, Playwright, báo lỗi).
+- `phong-qa` — quy trình QA của phòng (DB + cổng riêng của phòng, Playwright, báo lỗi).
 - `web-design-guidelines` — soát a11y và chuẩn giao diện trên các màn đã test.
 
 ## Problem
@@ -20,13 +20,13 @@ KHÔNG sửa code, test trong code, `docs/`. Thấy lỗi thì BÁO, không sử
 Đầu vào: `docs/features/<tên>.md` mục "Luật luôn đúng", `.scratch/<key>/spec.md`, `.scratch/<key>/techlead.md`.
 
 ## Direction
-- Đọc và làm theo `.claude/skills/phong-qa/SKILL.md` (kế hoạch, ma trận, dựng dữ liệu bằng API, `bug add`, chìa khoá app).
+- Đọc và làm theo `.claude/skills/phong-qa/SKILL.md` (kế hoạch, ma trận, dựng dữ liệu bằng API, `bug add`, `qa-up`/`qa-down`).
 - Ca Manager muốn ưu tiên: <…>
 
 ## Hard rules
 - **KHÔNG `git add`, KHÔNG `git commit`, KHÔNG push.** Lý do: Sếp duyệt mọi lần gộp; Manager gom file theo đường dẫn.
 - **Chỉ báo lỗi, không sửa code** — kể cả lỗi một dòng. QA sửa là mất người kiểm độc lập.
-- Chạy app thật chỉ khi phòng `<KEY>` giữ chìa khoá app; KHÔNG `make stop` khi không giữ (nó giết app phòng khác).
+- Chạy app thật bằng `make qa-up KEY=<key>` (cổng riêng trong `.scratch/<key>/qa/ports.env`), tắt bằng `qa-down`; KHÔNG `make dev`/`make stop` (giết app phòng khác).
 - Chỉ QA được đóng lỗi, và chỉ sau khi chạy lại ĐÚNG ca tái hiện.
 - Không thêm `@playwright/test` hay dependency nào vào repo (đã vào backlog).
 

@@ -15,7 +15,7 @@ CO=~/sportshub-company; C() { python3 $CO/bin/company.py "$@"; }; KEY=<KEY>; k=<
 
 Nguồn: `docs/features/<tên>.md` mục "Luật luôn đúng", `$R/spec.md`, `$R/techlead.md` (endpoint, mã lỗi).
 
-⛔ **Gọn** (Sếp duyệt 13/10 — một đợt từng có 180–450 dòng kế hoạch mỗi phòng, QA giữ chìa khoá app 30–45 phút):
+⛔ **Gọn** (Sếp duyệt 13/10 — một đợt từng có 180–450 dòng kế hoạch mỗi phòng, QA chạy app 30–45 phút mỗi lượt):
 kế hoạch chạy tay **tối đa ~50 ca, chỉ P0**: luật luôn đúng, quyền, tiền, luồng chính, và màn mới ở 3 cỡ. Thứ test tự
 động (unit/integration của dev) đã phủ thì KHÔNG chép thành ca tay — ghi một dòng "đã phủ bởi <file test>".
 Ca chọn theo RỦI RO, không theo chỉ tiêu: luật đúng/bị chặn khi có chặn; ca quyền chỉ khi luật dính quyền.
@@ -33,26 +33,26 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
 
 ## Lượt `test` — app thật
 
-1. **Chìa khoá app** — chỉ chạy app khi phòng mình giữ (cổng 8080/5173 vẫn dùng chung):
+1. **Bật app của phòng** — mỗi phòng một DB riêng và một cặp cổng riêng, không cần xin phép ai:
    ```bash
-   C key status                       # phòng mình giữ ⇒ đi tiếp
-   C key request $KEY --reason "QA"   # phòng khác giữ ⇒ đã xếp hàng: lane set waiting, báo cáo, DỪNG (Thư ký báo Manager khi tới lượt)
    make qa-up KEY=$k                   # gốc worktree phòng; Bash timeout ≥ 300000 ms (lần đầu còn biên dịch)
+   cat $R/qa/ports.env                 # SERVER_PORT, WEB_PORT của phòng — Bash không giữ biến giữa hai lần gọi: chép số vào lệnh curl
    DB=sportshub_${k//-/_}              # tên DB riêng của phòng — dùng cho dev-token.py ở bước 3
    ```
-   `qa-up` tạo DB riêng `$DB` trong container `sportshub-db` ĐANG chạy (Flyway tự chạy V1→Vn), từ chối nếu cổng
-   8080/5173 đã có tiến trình nghe (in PID + thư mục chạy — rất có thể là phòng khác: báo Manager, đừng tắt hộ),
-   rồi chạy nền server + web, chờ hai cổng lên (quá 180 giây ⇒ thoát mã 1, app có thể vẫn đang lên — đọc log).
-   Cổng bận mà thư mục chạy in ra nằm trong worktree của mình ⇒ là app của mình từ lần trước: `make qa-down KEY=$k`
-   rồi `qa-up` lại. Log ở `$R/qa/server.log` (mã OTP đọc ở đây), `$R/qa/web.log`.
+   `qa-up` tạo DB riêng `$DB` trong container `sportshub-db` ĐANG chạy (Flyway tự chạy V1→Vn), chọn cặp cổng của
+   phòng (server `8100–8199`, web `5200–5299`, suy từ KEY, bận thì dò cặp kế) và ghi vào `$R/qa/ports.env`, rồi chạy
+   nền server + web, chờ hai cổng lên (quá 180 giây ⇒ thoát mã 1, app có thể vẫn đang lên — đọc log).
+   Báo app của chính phòng mình còn chạy từ lần trước ⇒ `make qa-down KEY=$k` rồi `qa-up` lại.
+   Log ở `$R/qa/server.log` (mã OTP đọc ở đây), `$R/qa/web.log`.
    ⛔ KHÔNG `make dev` trong worktree (nó gọi `make db` → `docker compose up` của worktree) và KHÔNG BAO GIỜ
    `make stop` (giết theo cổng mọi app, kể cả phòng khác, rồi tắt luôn container DB chung). Không đụng docker.
-2. **Dựng dữ liệu bằng gọi API** (curl tới `http://localhost:8080/api/v1/…`), không bấm tay. Đăng ký ba bước theo
+2. **Dựng dữ liệu bằng gọi API** (curl tới `http://localhost:$SERVER_PORT/api/v1/…`), không bấm tay. Đăng ký ba bước theo
    `docs/runbook/00-chay-local.md` mục "Thử trọn luồng đăng ký": xin mã → mã OTP (mã dùng một lần, hết hạn sau ít
    phút) ghi ra log server khi chưa cấu hình gửi thư → đổi lấy vé → đăng ký → đăng nhập. Lưu script dựng vào
    `$R/qa/seed.sh` để chạy lại được; tài khoản đặt tên người Việt có dấu.
 3. **Chạy bằng plugin Playwright** (công cụ `browser_*` của plugin `playwright`): đặt cỡ khung, đăng nhập từng tài
-   khoản rồi tải lại trang (khỏi bấm form đăng nhập mỗi lần đổi tài khoản), đi từng ca. Đăng nhập:
+   khoản rồi tải lại trang (khỏi bấm form đăng nhập mỗi lần đổi tài khoản), đi từng ca. Mở app ở
+   `http://localhost:$WEB_PORT` (không phải 5173 — đó là app của Sếp; thẻ đăng nhập gắn theo cổng). Đăng nhập:
    `python3 scripts/dev-token.py <email> --db $DB --js` → dán câu in ra vào `browser_evaluate` → tải lại trang
    (`python3 scripts/dev-token.py --list --db $DB` xem tài khoản của phòng). Thiếu `--db` là script đọc DB dev
    `sportshub`, không thấy tài khoản của phòng.
@@ -65,11 +65,10 @@ Báo cáo, `LANE-DONE qa`, dừng — Manager duyệt kế hoạch rồi mới g
       --steps "<tài khoản · dữ liệu · bước 1..n · thấy gì · mong đợi gì · console>" --shot $R/qa/shots/<…>.png --by qa
    ```
    Lỗi mà "đúng" hay "sai" còn tuỳ cách hiểu luật ⇒ thêm `--needs-boss`, ghi rõ hai cách hiểu. Không tự quyết.
-5. Hết lượt: tắt ĐÚNG app của worktree mình rồi trả chìa khoá (chỉ khi mình đang giữ), viết báo cáo markdown, `LANE-DONE qa`:
+5. Hết lượt: tắt ĐÚNG app của worktree mình, viết báo cáo markdown, `LANE-DONE qa`:
    ```bash
-   make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này
+   make qa-down KEY=$k       # chỉ tắt PID qa-up đã ghi, và chỉ khi nó chạy từ worktree này; giữ DB $DB, không đụng docker
    # + gọi `browser_close` (tắt trình duyệt test) trước khi báo xong lượt
-   C key release $KEY       # giữ nguyên DB $DB và container sportshub-db — không docker stop/down
    ```
 
 ## Soát mỗi màn — ngoài các ca của kế hoạch
@@ -96,7 +95,7 @@ Kết luận cuối báo cáo, đúng một dòng: **ĐẠT** (0 lỗi mở) · 
 
 ## Lượt `test-lai <ID,…>`
 
-Giữ chìa khoá như trên. Chạy lại ĐÚNG bước trong thẻ (cùng tài khoản, cùng cỡ màn), cộng ca lân cận của cùng luật.
+Bật app như bước 1 của lượt `test`. Chạy lại ĐÚNG bước trong thẻ (cùng tài khoản, cùng cỡ màn), cộng ca lân cận của cùng luật.
 ```bash
 C bug set <ID> --status closed --note "test lại <mã ca> ở <cỡ/ngôn ngữ/theme>: đạt" --by qa
 C bug set <ID> --status fixing --note "vẫn lỗi: <thấy gì>" --by qa      # còn lỗi ⇒ trả về fixing

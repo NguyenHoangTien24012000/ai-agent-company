@@ -115,6 +115,11 @@ ps -eo rss,command | grep -E "[c]laude |[c]odex" | awk '{s+=$1;n++} END{printf "
 chạy pin hay cắm sạc (`pmset -g batt`). Orca giữ máy thức (`caffeinate`) — đêm 14/10 khoảng 26 phiên, pin 100% → 4%.
 Phiên dự án khác chỉ báo, Sếp tự đóng.
 
+### 3c. CI sau mỗi lần gộp (Sếp chốt 18/10)
+Phòng gộp + push ⇒ `gh run list --branch main --limit 1`, chạy nền `gh run watch <id> --exit-status`; xong mà đỏ ⇒ báo Sếp
+ngay (job nào, test nào, `gh run view <id> --log-failed`), mở thẻ/phòng sửa. CI main đỏ 27/09–18/10 không ai thấy vì
+chỉ đọc `make check` local.
+
 ### 4. Kiểm số (phòng sang `cho-gop`/`cho-check`, hoặc ask cổng 5/6)
 Đọc log Manager, KHÔNG chạy lại mặc định (một lần `make check` trên bản cuối là đủ):
 1. Lấy claim của Manager: context của ask cổng 5/6 — SHA HEAD, số test, log `<wt>/.scratch/<key>/check-<sha>.log`.
