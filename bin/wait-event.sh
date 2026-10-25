@@ -2,6 +2,29 @@
 # Chờ dòng sự kiện mới khớp bộ lọc; hết giờ trả exit 2.
 set -euo pipefail
 COMPANY_ROOT="${SPORTSHUB_CO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Watcher của Thư ký (không lọc --room) giữ nhịp kiểm sống: nhịp kiểm chỉ được bật qua open-board.sh, chết từ 23/10
+# mà không ai biết, nên 25/10 hai phòng đứng ~2 giờ (lane quá tải, Manager ngủ) không có sự kiện nào báo.
+# HEARTBEAT_AUTOSTART=0 tắt việc này (test); HEARTBEAT_BIN thay script nhịp kiểm (test dùng bản giả).
+case " $* " in
+  *" --room "* | *" --room="*) ;;
+  *)
+    if [ "${HEARTBEAT_AUTOSTART:-1}" = 1 ]; then
+      pidfile="$COMPANY_ROOT/state/heartbeat.pid"
+      hb_pid="$(cat "$pidfile" 2>/dev/null || true)"
+      if ! { [ -n "$hb_pid" ] && ps -p "$hb_pid" -o command= 2>/dev/null | grep -q 'heartbeat\.py'; }; then
+        mkdir -p "$COMPANY_ROOT/state"
+        # Fork trong subshell: subshell thoát ngay nên nhịp kiểm mồ côi (cha là launchd), cộng `os.setsid()` trong
+        # heartbeat.py ⇒ không chết theo cây/nhóm tiến trình khi Claude Code dọn tác vụ nền của watcher này.
+        ( nohup python3 "${HEARTBEAT_BIN:-$BIN_DIR/heartbeat.py}" >>"$COMPANY_ROOT/state/heartbeat.log" 2>&1 </dev/null &
+          echo $! >"$pidfile" )
+        echo "wait-event: nhịp kiểm không chạy — đã bật lại (pid $(cat "$pidfile"))" >&2
+      fi
+    fi
+    ;;
+esac
+
 exec python3 - "$COMPANY_ROOT" "$@" <<'PY'
 import argparse
 import json

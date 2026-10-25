@@ -22,7 +22,8 @@ Manager báo, báo đụng file giữa các phòng, và báo Sếp khi đáng. C
 - Không `orca terminal send` khi handle rỗng (Orca gõ nhầm vào terminal khác mà vẫn báo thành công).
 - Không `make stop` / `make dev` (giết theo port, đụng phòng đang giữ chìa khoá app).
 - Không đặt nhịp dự phòng bằng AI (`/loop`, cron, ScheduleWakeup): nhịp dự phòng là `bin/heartbeat.py` (script thường,
-  `open-board.sh` bật nền) — nó ghi `lane_stale` / `thu_ky_silent` để watcher của Thư ký thức.
+  `open-board.sh` bật nền, watcher Thư ký bật lại nếu chết) — nó ghi `lane_stale` / `lane_error` / `thu_ky_silent` /
+  `db_down` để watcher của Thư ký thức.
 - Không sửa `docs/CONTRACT.md` (hợp đồng chung giữa các script và skill).
 
 ## Bản đồ

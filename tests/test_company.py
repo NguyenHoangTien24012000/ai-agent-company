@@ -595,6 +595,16 @@ class HeartbeatTests(unittest.TestCase):
                         f'cat "{self.screens}/$4.txt"\n')
         orca.chmod(0o755)
         self.env['ORCA'] = str(orca)
+        # Docker giả: in trạng thái container từ docker.txt (mặc định đang chạy). Không bao giờ hỏi Docker thật.
+        self.docker_state = self.root / 'docker.txt'
+        self.docker_state.write_text('true\n')
+        docker = self.root / 'docker'
+        docker.write_text('#!/bin/sh\n'
+                          f'[ -f "{self.docker_state}" ] || {{ echo "Cannot connect to the Docker daemon" >&2; exit 1; }}\n'
+                          f'cat "{self.docker_state}"\n')
+        docker.chmod(0o755)
+        self.env['DOCKER'] = str(docker)
+        self.env['HEARTBEAT_AUTOSTART'] = '0'        # watcher trong test không được bật nhịp kiểm thật
         self.cli('room', 'new', 'ATTEND', '--title', 'Có mặt')
         self.cli('lane', 'add', 'ATTEND', '--role', 'qa', '--handle', 'term_qa')
         self.start = datetime.now(timezone(timedelta(hours=7)))
@@ -765,6 +775,34 @@ class HeartbeatTests(unittest.TestCase):
         self.assertEqual(len(self.events('lane_error')), 1)
         self.assertEqual(len(self.events('lane_stale')), 1)
 
+    def test_db_down_is_reported_once_per_outage(self):
+        self.beat(1)
+        self.assertEqual(self.events('db_down'), [])                       # DB đang chạy
+        self.docker_state.write_text('false\n')
+        self.beat(2)
+        down = self.events('db_down')
+        self.assertEqual([(e['room'], e['container']) for e in down], [(None, 'sportshub-db')])
+        self.assertEqual(self.board()['events'][0]['type'], 'db_down')
+        self.beat(200)
+        self.assertEqual(len(self.events('db_down')), 1)                   # vẫn tắt ⇒ không báo lặp
+        self.docker_state.write_text('true\n')
+        self.beat(201)
+        self.assertNotIn('dbDownSince', json.loads((self.root / 'state/heartbeat.json').read_text()))
+        self.docker_state.unlink()                                         # Docker tắt hẳn cũng là DB tắt
+        self.beat(202)
+        self.assertEqual(len(self.events('db_down')), 2)
+        self.env['DOCKER'] = str(self.root / 'khong-co-docker')
+        self.docker_state.write_text('true\n')
+        self.beat(203)                                                     # không hỏi được ⇒ giữ nguyên, không báo
+        self.assertEqual(len(self.events('db_down')), 2)
+
+    def test_db_down_does_not_count_as_room_activity(self):
+        self.age_lane(120)
+        self.docker_state.write_text('false\n')
+        self.beat(1)
+        self.beat(50)
+        self.assertEqual(len(self.events('lane_stale')), 1)
+
     def test_invalid_arguments(self):
         for args in (['--now', 'không phải giờ'], ['--stale-minutes', '0'], ['--interval', '-1']):
             with self.subTest(args=args):
@@ -781,7 +819,7 @@ class WaitEventTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.env = dict(os.environ, SPORTSHUB_CO=str(self.root))
+        self.env = dict(os.environ, SPORTSHUB_CO=str(self.root), HEARTBEAT_AUTOSTART='0')
         self.path = self.root / 'state/events.jsonl'
         self.path.parent.mkdir()
         self.path.write_text('')
@@ -849,6 +887,39 @@ class WaitEventTests(unittest.TestCase):
             result = subprocess.run(['bash', str(WAITER), flag, value], env=self.env, text=True,
                                     capture_output=True, timeout=2)
             self.assertEqual(result.returncode, 2)
+
+    def test_thu_ky_waiter_restarts_dead_heartbeat_but_room_waiter_does_not(self):
+        # Nhịp kiểm giả mang đúng tên heartbeat.py (wait-event nhận diện bằng tên trong `ps`), chỉ ngủ rồi thoát.
+        fake = self.root / 'fake' / 'heartbeat.py'
+        fake.parent.mkdir()
+        fake.write_text('import time\ntime.sleep(30)\n')
+        self.env.update(HEARTBEAT_AUTOSTART='1', HEARTBEAT_BIN=str(fake))
+        pidfile = self.root / 'state/heartbeat.pid'
+
+        def run(*args):
+            return subprocess.run(['bash', str(WAITER), '--timeout', '0.1', *args], env=self.env, text=True,
+                                  capture_output=True, timeout=5)
+
+        def kill(pid):
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+        run('--room', 'ATTEND')
+        run('--room=ATTEND')
+        self.assertFalse(pidfile.exists())                                 # watcher Manager không đụng nhịp kiểm
+        pidfile.write_text('999999\n')                                    # pid cũ đã chết
+        result = run('--types', 'ask_opened')
+        pid = int(pidfile.read_text())
+        self.addCleanup(kill, pid)
+        self.assertNotEqual(pid, 999999)
+        self.assertIn('đã bật lại', result.stderr)
+        ppid = subprocess.run(['ps', '-o', 'ppid=', '-p', str(pid)], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(ppid, '1')                                        # mồ côi: không chết theo cây của watcher
+        result = run()
+        self.assertEqual(int(pidfile.read_text()), pid)                    # đang sống ⇒ không bật thêm
+        self.assertNotIn('đã bật lại', result.stderr)
 
 
 if __name__ == '__main__':

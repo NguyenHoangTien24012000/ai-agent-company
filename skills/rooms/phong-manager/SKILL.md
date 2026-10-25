@@ -34,6 +34,10 @@ git log --oneline main..HEAD
 Ghép hai nguồn: file phòng (`state/rooms/<KEY>.json`) nói bước + ai đang chạy + câu nào chờ Sếp;
 `$R/` nói đã chốt gì (spec, brief, báo cáo lane). Hai nguồn lệch ⇒ tin file trên đĩa, sửa trạng thái bằng `C room set`.
 Có lane `running` ⇒ đọc màn hình nó (`orca terminal read --terminal <h> --screen --limit 30`) và arm lại watcher (mục 5).
+Thư ký note `main vừa nhận <sha> từ <phòng>` ⇒ rebase lên main ngay khi không còn lane dev nào `running` (đợi
+`LANE-DONE`, commit đúng file lane báo, rồi `git rebase main`), chạy `npm run check:arch` + test phần đụng, sửa chỗ hợp
+đồng chung đổi; không đợi tới mục 11 (luật máy UI-SYSTEM, khoá phiên UX-VAO từng chỉ lộ lúc gộp). `make check` toàn bộ
+vẫn chỉ chạy ở mục 11.
 Mở lần đầu (chưa có `$R/`): `mkdir -p $R/briefs $R/reports`, tạo `$R/NHAT-KY.md` — mỗi quyết định một dòng có ngày.
 
 ## 1b. Luồng nhỏ — chọn trước khi hỏi đáp
@@ -166,16 +170,30 @@ C lane add $KEY --role <vai> --handle $H --model codex|opus|sonnet
 
 Arm watcher **CÙNG lượt** dispatch (Bash `run_in_background`):
 
-- codex: `<plugin>/skills/orca-orchestration/orca-lane-watch.sh --handles $H[,…]`
-- Claude: `until grep -q "LANE-DONE <vai>" $R/reports/<vai>.md 2>/dev/null; do sleep 15; done; echo "<vai> xong"`
-- luôn có một: `$CO/bin/wait-event.sh --room $KEY --types bug_opened,bug_changed,lane_changed` — thức thì chạy lại.
+- MỖI lane MỘT watcher riêng (codex lẫn Claude) — chờ file báo cáo HOẶC dòng lỗi trên màn, cái nào tới trước:
+  ```bash
+  s0=$(orca terminal read --terminal $H --screen --limit 15 2>/dev/null)   # màn lúc arm: lỗi cũ còn trên màn thì không tính
+  until grep -q "LANE-DONE <vai>" $R/reports/<vai>.md 2>/dev/null; do
+    s=$(orca terminal read --terminal $H --screen --limit 15 2>/dev/null)
+    if [ "$s" != "$s0" ] && ! grep -qiE "esc to interrupt|working \(" <<<"$s" \
+       && grep -qiE "at capacity|api error|connection lost|response stopped arriving|stream disconnected|network error|econnreset|fetch failed|rate limit" <<<"$s"; then
+      echo "<vai> LỖI — xem màn $H"; exit 0; fi
+    sleep 30; done; echo "<vai> xong"
+  ```
+  Danh sách lỗi và dấu đang chạy giữ khớp `ERROR_PATTERNS`/`BUSY_PATTERNS` trong `$CO/bin/heartbeat.py`. Thức vì LỖI ⇒
+  xử lý như "Lane chết lặng" (mục 7) rồi arm lại watcher của lane đó.
+  ⛔ Không gộp nhiều lane vào một watcher `&&` (25/10 UX-TRAN: một lane xong trước, watcher không thức, phòng đứng 2 giờ).
+  Không dùng `orca-lane-watch.sh` (báo «xong» khi màn bị cuộn). Lane codex «at capacity» mà watcher chỉ chờ
+  `LANE-DONE` thì không bao giờ thức (25/10 UX-VAO đứng 2 giờ).
+- luôn có một: `$CO/bin/wait-event.sh --room $KEY --types bug_opened,bug_changed,lane_changed,note` — thức thì chạy lại.
 
 Giao lượt tiếp cho CÙNG lane (feedback, sửa lỗi, test lại) ⇒ trước đó `mv $R/reports/<vai>.md $R/reports/<vai>-<n>.md`,
 không thì watcher bắt nhầm `LANE-DONE` của lượt cũ. Lượt mới gửi bằng `orca terminal send` một câu trỏ vào brief/ghi chú mới.
 Lane codex mở bằng `--add-dir /Users/tien/sportshub-company` nên tự ghi được `C lane set`/`bug set`; Manager vẫn
 `C room show $KEY` kiểm lại sau mỗi lượt — lane quên ghi (hay lệnh mở thiếu `--add-dir`) thì Manager tự `C lane set` thay.
 Lane xong ⇒ `C lane set $KEY --handle $H --status done --note "<1 dòng>"`; hết việc ⇒ `orca terminal close --terminal $H --tab`
-rồi `--status closed`.
+rồi `--status closed`. Đóng lane mà watcher của nó còn chạy (lane chết trước khi ghi `LANE-DONE`) ⇒ dừng luôn watcher đó
+(KillShell/TaskStop), không thì nó đọc handle đã chết mỗi 30 giây mãi mãi.
 
 **Vòng đời lane — Manager quyết đóng lane nào** (máy chỉ có chừng ấy RAM: một đợt 6 phòng từng để 65 phiên AI mở cùng
 lúc, 7 GB, máy còn ~70 MB trống). Mỗi lần một lane báo xong, Manager tự hỏi: *lượt tới của phòng còn cần đúng phiên này
@@ -200,7 +218,9 @@ server Playwright của phiên đó. Phiên Manager giữ tới `room done`; sau
 Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo cáo, feedback qua `orca terminal send` tới khi đạt.
 - Designer chạy `thiet-ke-man` (mục "Khi chạy trong phòng"). **Chỉ vẽ 3 ý tưởng khi làm màn MỚI hoàn toàn**: xem đủ 3,
   **tự chọn 1 + lý do** ⇒ ask cổng 2 (option mỗi bản, `--recommend` bản đã chọn). Sửa màn lab đã có ⇒ bỏ cổng 2, sửa
-  thẳng rồi trình cổng 3. Giao diện mẫu xong + `nghiem-thu.html` ⇒ ask cổng 3.
+  thẳng rồi trình cổng 3. Giao diện mẫu xong + `nghiem-thu.html` ⇒ ask cổng 3. Lab phải vẽ MỌI phản hồi (câu báo
+  thành công/lỗi, thông báo nổi hay khối cố định) ở MỌI trang đích của luồng, không chỉ trang chính — UX-VAO vẽ khối
+  báo cho trang nhà, code làm toast cho ba đích, phải hỏi lại Sếp ở cổng 6.
 - Techlead (`$R/techlead.md`, skill `phong-techlead`) ⇒ Manager soi đối chiếu spec ⇒ ask cổng 4: cột/bảng cụ thể,
   ADR, thư viện mới (W8 — chưa ok thì không ai viết migration/thêm dependency).
 - **Hợp đồng chung giữa phòng** (cửa khoá, thứ tự lỗi, cài đặt/khái niệm nhiều phòng cùng cần): Techlead đã soi các
@@ -273,6 +293,11 @@ cổng 5 riêng (cổng 5 + 6 gộp một lần duyệt, Sếp duyệt 13/10).
 
 ## 11. Chuẩn bị gộp → cổng 5 + 6 (một lần duyệt)
 
+Xung đột `web/scripts/design-baseline.json` ⇒ lấy bản `main`, chạy
+`cd web && npm run check:arch -- --update-baseline && npm run check:arch`.
+Lệnh chỉ hạ số; nếu báo tăng thì chuyển code sang danh mục `web/DESIGN.md`, không lấy số lớn hơn
+của hai phía. Tăng tay chỉ khi spec ghi Sếp đã duyệt (WB19); không xoá file để khởi tạo lại.
+
 Xung đột khi rebase ⇒ skill `resolving-merge-conflicts` (plugin mattpocock-skills); giữ luật của CẢ HAI phía.
 
 ```bash
@@ -323,8 +348,10 @@ Bảng "KHÔNG BAO GIỜ commit" trong `CLAUDE.md` vẫn áp: `git diff --cached
 - Lane tự chạy test phần mình đụng. Manager KHÔNG chạy lại toàn bộ sau mỗi lane — chỉ kiểm `git status --porcelain`
   khớp file lane báo (sửa ngoài "Files You May Edit" ⇒ trả lại) và xem màn khi có giao diện.
 - ⛔ Sau MỖI lượt dev-web (kể cả lượt sửa CSS), TRƯỚC khi giao QA: Manager tự mở màn bằng plugin Playwright ở
-  390, 820, 1440 (tràn ngang, chữ chưa dịch, lệch lab). Dev-web (codex) không có trình duyệt — bốn phòng liền lỗi bố cục
-  chỉ lộ ở QA. Thấy lệch ⇒ trả dev-web luôn, không mở bug QA.
+  390, 820, 1440 (tràn ngang, chữ chưa dịch, lệch lab — kể cả câu báo/toast). Dev-web (codex) không có trình duyệt — bốn phòng
+  liền lỗi bố cục chỉ lộ ở QA. Thấy lệch ⇒ trả dev-web luôn, không mở bug QA. Bằng chứng BẮT BUỘC: ảnh
+  `$R/manager-shots/<lượt>-<cỡ>.png` + một dòng `NHAT-KY.md` («lượt N: đã soi 390/820/1440, khớp lab / lệch: …») TRƯỚC
+  khi giao QA — UI-SYSTEM, UX-TRAN lượt 6 bỏ bước này và lỗi bố cục lộ ở QA.
 - `make check` toàn bộ chạy MỘT lần ở mục 11, sau rebase; lưu log `$R/check-<sha>.log` (Thư ký đọc log này + SHA,
   chỉ chạy lại khi SHA lệch hoặc log bất thường). Số trình Sếp lấy từ log đó.
 - Review độc lập MỘT lần trước gộp (lane `review`, mục 10); vòng sửa lỗi chỉ soi phần sửa và nơi bị ảnh hưởng.

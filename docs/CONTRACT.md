@@ -177,6 +177,7 @@ Mỗi dòng: `{"ts":"…","type":"…","room":"ATTEND", ...trường riêng}`. S
 (có `via`, `choice`, `note`) · `bug_opened` · `bug_changed` (có `status`, `assignee`) · `key_requested` · `key_taken` · `key_released` (có `handedTo`) ·
 `overlap` · `evidence` · `note` · `lane_stale` (`handle`, `role`, `minutes`) · `thu_ky_silent` (`room: null`, `minutes`) ·
 `lane_error` (`handle`, `role` — `manager` nếu là terminal Manager — `line`: dòng lỗi khớp, ≤ 200 ký tự) ·
+`db_down` (`room: null`, `container`) ·
 `task_added` · `task_changed` (`change`: `move` | `edit` | `start`) · `task_removed`
 — sự kiện thẻ việc luôn `room: null`, mang `taskId`, `title`, `column`, `linkedRoom` (KEY phòng hoặc null) ·
 `task_ask_answered` (`room: null`, `task`, `askId`, `choice`, `note`) — board server ghi khi Sếp trả lời câu của thẻ trên
@@ -269,11 +270,17 @@ không dùng AI. Mỗi lượt, với mỗi phòng active:
   `ECONNRESET`, `fetch failed`, `rate limit`) **và** màn hình không có `esc to interrupt` / `Working (` ⇒
   `Company.record('lane_error', {handle, role, line}, room)` ngay lượt đó (không chờ ngưỡng). Chống lặp: dấu
   `errors["ROOM/handle"] = {line, screen}` (băm 12 dòng cuối) ở `heartbeat.json`; chỉ báo lại khi dòng lỗi hay đáy màn
-  hình đổi; hết lỗi thì xoá dấu, đọc lỗi thì giữ dấu. Biến `ORCA` thay Orca CLI (test dùng orca giả).
+  hình đổi; hết lỗi thì xoá dấu, đọc lỗi thì giữ dấu. Biến `ORCA` thay Orca CLI (test dùng orca giả);
+- `$DOCKER inspect -f '{{.State.Running}}' sportshub-db` khác `true` (hay lỗi: Docker tắt, container mất) ⇒
+  `Company.record('db_down', {container})` cấp công ty, MỘT lần mỗi đợt tắt (dấu `dbDownSince` ở `heartbeat.json`, xoá
+  khi chạy lại). Không có Docker CLI ⇒ bỏ qua. Biến `DOCKER` thay Docker CLI (test dùng docker giả).
 
-`lane_error` không tính là phòng còn hoạt động (như hai loại kia). Không báo lặp: cùng (room, handle) — hay Thư ký — chỉ báo lại khi đã qua thêm một ngưỡng kể từ lần báo trước;
+`lane_error`, `db_down` không tính là phòng còn hoạt động (như hai loại kia). Không báo lặp: cùng (room, handle) — hay Thư ký — chỉ báo lại khi đã qua thêm một ngưỡng kể từ lần báo trước;
 dấu ở `state/heartbeat.json`. Lane hết `running` thì xoá dấu. `--now` (chỉ kèm `--once`) giả giờ cho test.
 `bin/open-board.sh` bật nó nền (nohup, `state/heartbeat.log`) nếu `state/heartbeat.pid` không trỏ tới tiến trình đang chạy.
+`bin/wait-event.sh` gọi KHÔNG `--room` (watcher Thư ký) cũng kiểm như vậy và bật lại nếu chết — fork trong subshell
+(mồ côi, cha là launchd) và heartbeat tự `os.setsid()` khi không `--once`, để không chết theo tác vụ nền của phiên đã
+bật nó. `HEARTBEAT_AUTOSTART=0` tắt, `HEARTBEAT_BIN` thay script (test).
 
 ## Board (`board.html`)
 

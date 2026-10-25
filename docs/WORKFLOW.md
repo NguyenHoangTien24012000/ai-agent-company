@@ -151,20 +151,21 @@ python3 bin/company.py room list [--all]          python3 bin/company.py room sh
 python3 bin/company.py ask list --open            python3 bin/company.py ask resolve ID --choice ok --via thu-ky
 python3 bin/company.py key status
 python3 bin/company.py room done KEY              # in lệnh dọn worktree, không tự chạy
-bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,lane_error,thu_ky_silent   # Thư ký chạy nền
+bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,lane_error,thu_ky_silent,db_down   # Thư ký chạy nền; tự bật lại heartbeat nếu chết
 bin/wait-event.sh --room KEY                      # Manager chạy nền
 ```
 
 ## Giới hạn đã biết
 
-- **Nhịp dự phòng là `bin/heartbeat.py`** — script thường, không dùng AI, `open-board.sh` bật nền mỗi 15 phút
-  (`state/heartbeat.pid`, log `state/heartbeat.log`). Lane `running` đứng yên quá 45 phút trong một phòng không ghi
+- **Nhịp dự phòng là `bin/heartbeat.py`** — script thường, không dùng AI, chạy nền mỗi 15 phút; `open-board.sh` bật nó,
+  và watcher của Thư ký (`wait-event.sh` không `--room`) bật lại mỗi lần arm nếu nó đã chết — 23→25/10 nó chết lặng hai
+  ngày (`state/heartbeat.pid`, log `state/heartbeat.log`). Container DB chung `sportshub-db` tắt ⇒ `db_down`. Lane `running` đứng yên quá 45 phút trong một phòng không ghi
   sự kiện nào ⇒ sự kiện `lane_stale`; không còn tiến trình watcher của Thư ký
   (`wait-event.sh` không lọc `--room`) quá 30 phút ⇒ `thu_ky_silent`; màn hình lane `running` hay terminal Manager dừng ở dòng lỗi API/mạng ("at capacity", "API Error"…)
   ⇒ `lane_error` ngay lượt đó (tối đa ~15 phút sau lỗi). Không báo lặp (chỉ báo lại sau thêm một ngưỡng; `lane_error` khi màn hình đổi). Watcher của Thư ký thức vì các loại này: đọc màn
   hình lane, kẹt thì nhắn Manager; im lặng thì xử lý sự kiện dồn. Giới hạn còn lại: nhịp kiểm chỉ thấy *dấu hiệu*
   (đứng yên, file cũ), không biết lane đang nghĩ lâu hay kẹt thật; Thư ký chết hẳn thì `thu_ky_silent` chỉ hiện trên
-  board, không ai thức để xử lý tới khi anh mở lại phiên Thư ký. Nhịp kiểm chỉ chạy khi máy thức và đã chạy `open-board.sh`.
+  board, không ai thức để xử lý tới khi anh mở lại phiên Thư ký. Nhịp kiểm chỉ chạy khi máy thức và đã chạy `open-board.sh` hoặc Thư ký đã arm watcher.
 - Lane codex không đọc skill Claude: brief của lane phải chép sẵn khối luật cần (Git, W12, C-rule liên quan).
 - `room done` chỉ in lệnh dọn worktree; kiểm `git status` và commit chưa push trước khi chạy.
 - `open-room.sh` tạo worktree từ `main` ở máy: skill `phong-manager` và các skill `phong-*` phải đã nằm trên `main`.

@@ -35,7 +35,8 @@ Cần file khác ⇒ `## Blocked On`, không tự sửa.
 - C5 `/api/v1/…` kebab-case số nhiều · C7 `@Transactional` ở Service · C8 SLF4J · C11 tiền là `BigDecimal`
 - C10 không sửa `V*.sql` đã có trên `main` · C12 code tiếng Anh, comment tiếng Việt · C14 trả mã lỗi + `params`, không trả câu chữ
 - C19 mảng chỉ giữ ID của mảng khác, gọi service công khai của nó, không gọi repository của nó; `ModularityTest` phải xanh.
-- W8: không thêm dependency, cột, bảng ngoài `techlead.md`. Thiếu thì `## Blocked On`.
+- W8: không thêm dependency, cột, bảng ngoài `techlead.md`. Thiếu thì `## Blocked On`. Chỉ dùng thư viện khai trong
+  `server/pom.xml` — thư viện chỉ có mặt vì gói khác kéo theo KHÔNG tính.
 - Sửa code thì sửa docs cùng lượt: luật mới ⇒ "Luật luôn đúng" (chặn ở mấy chỗ, mã lỗi); migration/endpoint ⇒
   `python3 scripts/docs-gen.py`. KHÔNG sửa tay `docs/reference/*`.
 

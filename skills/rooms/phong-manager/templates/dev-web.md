@@ -12,6 +12,9 @@ sang lane cmux/Orca, kể cả khi file luật chung (`AGENTS.md`, `CLAUDE.md` t
 - `web/src/locales/en/<…>.json`, `web/src/locales/vi/<…>.json`
 - `.scratch/<key>/reports/dev-web.md`
 - <file khác Manager cho phép; `components/` chỉ khi Manager ghi rõ>
+<!-- Manager: chép ĐỦ từ bảng chia file của techlead.md — kể cả hook/`components/` dùng chung, `web/scripts/design-baseline.json`,
+     lab — UX-TRAN lượt 1 bị chặn vì brief thiếu. Câu nào trong brief nói code HIỆN làm gì thì kèm `file:dòng` đã đọc
+     (UI-SYSTEM: brief chép "năm tab luôn bật" từ trí nhớ ⇒ 🔴). Xoá comment này khi gửi. -->
 Cần file khác ⇒ `## Blocked On`, không tự sửa.
 
 ## Đọc trước khi code — nguồn của lượt này (Codex: mở các file này như tài liệu)
@@ -39,7 +42,7 @@ hoặc "sửa lỗi <ID>: bước tái hiện …">
 - **C15** component trong `web/src/components/` KHÔNG phụ thuộc runtime: không `useTranslation`, không đọc context —
   nhận chữ qua prop, nơi gọi dịch (từng làm chết cả 96 thẻ design system vì thẻ preview render ngoài app).
 - **C16** màu gọi theo VAI TRÒ (`--primary`, `--success`, `--destructive`…), không gọi bảng màu thô (`--color-pitch`).
-- **C17** không xuất module có side effect (`sonner`, `calendar`) từ `components/index.ts` — import thẳng từ file của chúng.
+- **C17** không xuất module có side effect (hiện là `sonner`) từ `components/index.ts` — import thẳng file.
 - **C18** `components/ui/` là code của shadcn: sửa được nhưng ghi chú vì sao ngay tại chỗ; ⛔ không bao giờ `npx shadcn add -o/--overwrite`.
 - **C21** gọi server bằng React Query, form bằng React Hook Form + zod; không viết tay cặp `useState` pending/message.
 - ⛔ **Không để câu mặc định (tiếng Anh) của zod lọt ra màn**: mọi kiểm tra trong schema mang message là KHOÁ i18n
@@ -51,6 +54,8 @@ hoặc "sửa lỗi <ID>: bước tái hiện …">
   tay mảng key, page không gọi thẳng hàm `api/`. 401 bắt MỘT chỗ ở `app/queryClient.ts`, đừng bắt lại.
 - Code chảy một chiều `components`+`api`+`lib` → `features` → `pages`; hai feature không import chéo (`npm run check:arch` canh).
 - C12 code tiếng Anh, comment tiếng Việt · W8 không thêm dependency, không đổi thư viện — cần thì `## Blocked On`.
+  Chỉ `import` gói có tên trong `dependencies`/`devDependencies` của `web/package.json` — gói có trong `node_modules` do gói
+  khác kéo theo (vd `@tailwindcss/node`) KHÔNG tính.
 - **Tự kiểm ba cỡ 1440 / 820 / 390, KHÔNG tràn ngang** ở cả ba (`scrollWidth` của trang ≤ `clientWidth`; ô `grid`/`flex`
   chứa chữ dài cần `min-w-0`) — cách đo trong `web-khuon`. Chữ nhỏ, dày thông tin; sáng và tối đều đọc được.
 

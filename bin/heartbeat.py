@@ -6,11 +6,12 @@ Mỗi lượt đọc state và ghi sự kiện (qua Company.record, không ghi t
   (lane treo im lặng — trước đây không ai biết, chỉ có Orca báo terminal đứng yên);
 - `thu_ky_silent`: không còn tiến trình `wait-event.sh` không lọc `--room` (watcher của Thư ký) quá ngưỡng ⇒ Thư ký ngủ quên;
 - `lane_error`: màn hình lane `running` hay terminal Manager dừng ở một dòng lỗi API/mạng (Codex "at capacity", Claude
-  "API Error"…) mà không còn chạy ⇒ báo ngay lượt này, không chờ ngưỡng `lane_stale` (từng có lane chết lặng 145 phút).
+  "API Error"…) mà không còn chạy ⇒ báo ngay lượt này, không chờ ngưỡng `lane_stale` (từng có lane chết lặng 145 phút);
+- `db_down`: container DB chung `sportshub-db` không chạy (hay Docker tắt) ⇒ báo một lần mỗi đợt tắt, bật lại thì bỏ dấu.
 
 Không báo lặp: cùng một lane (hay Thư ký) chỉ báo lại khi đã qua thêm một ngưỡng nữa kể từ lần báo trước;
-dấu lưu ở `state/heartbeat.json`. `--now` giả giờ cho test, nên test không phải sleep. Biến `ORCA` thay Orca CLI
-(test dùng orca giả, không bao giờ đọc terminal thật).
+dấu lưu ở `state/heartbeat.json`. `--now` giả giờ cho test, nên test không phải sleep. Biến `ORCA` thay Orca CLI,
+`DOCKER` thay Docker CLI (test dùng bản giả, không bao giờ đọc terminal hay container thật).
 """
 
 import argparse
@@ -27,9 +28,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from company import TZ, Company, atomic_write, read_json  # noqa: E402
 
 # Sự kiện do chính nhịp kiểm ghi không được tính là "phòng còn hoạt động", nếu không lần báo sau sẽ tự che lần báo trước.
-OWN_TYPES = ('lane_stale', 'thu_ky_silent', 'lane_error')
+OWN_TYPES = ('lane_stale', 'thu_ky_silent', 'lane_error', 'db_down')
 THU_KY = 'thu-ky'
 ORCA = os.environ.get('ORCA', '/Applications/Orca.app/Contents/Resources/bin/orca')
+DOCKER = os.environ.get('DOCKER', 'docker')
+DB_CONTAINER = 'sportshub-db'
 
 # Dòng lỗi khiến lane đứng im ở dấu nhắc (so không phân biệt hoa thường). Chỉ xét ERROR_TAIL dòng cuối khác rỗng:
 # lỗi cũ đã trôi lên trên mà lane chạy tiếp thì không tính.
@@ -89,6 +92,17 @@ def read_screen(handle):
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def db_running():
+    """True/False theo Docker; None khi không hỏi được (không có Docker CLI) — khi đó không báo gì."""
+    try:
+        result = subprocess.run([DOCKER, 'inspect', '-f', '{{.State.Running}}', DB_CONTAINER],
+                                capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # Docker tắt hay container mất cũng làm app chết y như container dừng ⇒ coi là tắt.
+    return result.returncode == 0 and result.stdout.strip() == 'true'
 
 
 def screen_error(screen):
@@ -162,6 +176,14 @@ def beat(company, current, stale, silent):
     marks['lanes'] = {mark: at for mark, at in active_lanes.items() if at}
     written += check_errors(company, active, marks)
 
+    # DB chung tắt thì mọi phòng lẫn app chính cùng lỗi (25/10: tắt lúc 22:58, Sếp thấy app lỗi trước Thư ký).
+    running = db_running()
+    if running is False and 'dbDownSince' not in marks:
+        marks['dbDownSince'] = current.isoformat()
+        written.append(company.record('db_down', {'container': DB_CONTAINER}))
+    elif running:
+        marks.pop('dbDownSince', None)
+
     # Thư ký còn canh = có tiến trình wait-event.sh KHÔNG lọc --room (watcher của Manager luôn có --room).
     # Đo tiến trình thay vì file mốc: watcher chờ tới 4 tiếng mà vẫn khoẻ, không phải đánh thức Thư ký định kỳ.
     if thu_ky_watching():
@@ -194,6 +216,13 @@ def main(argv=None):
     a = p.parse_args(argv)
     if a.now and not a.once:
         p.error('--now chỉ dùng kèm --once.')
+    if not a.once:
+        # Phiên riêng: watcher Thư ký bật lại nhịp kiểm từ trong tác vụ nền của Claude Code — không tách nhóm thì
+        # dọn tác vụ đó là giết luôn nhịp kiểm, đúng lúc cần nó báo thu_ky_silent nhất.
+        try:
+            os.setsid()
+        except OSError:
+            pass   # đã là trưởng nhóm tiến trình — vẫn chạy được
     company = Company()
     stale, silent = timedelta(minutes=a.stale_minutes), timedelta(minutes=a.thu_ky_minutes)
     while True:

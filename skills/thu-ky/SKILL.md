@@ -56,7 +56,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `room_changed` sang `step=cho-gop` | Kiểm số (bước 4) — MỘT lần, trên SHA đã rebase. Bỏ qua `cho-check` (cổng 5 gộp vào 6) |
 | `bug_opened`/`bug_changed` có `needsBoss` | Việc mới cho Sếp ⇒ báo. Lỗi thường: không báo, Manager tự lo |
 | `lane_changed`, `room_changed` khác | Không báo; bước 3 sẽ bắt commit mới |
-| `room_done` | Báo Sếp phòng xong. Retro xong (thiếu `<wt>/.scratch/<key>/retro.md` ⇒ nhắn Manager viết, CHƯA dọn — LINEUP, RESULT từng mất retro vì dọn trước) ⇒ chép `retro.md` sang `state/retros/<KEY>.md`, đóng phiên Manager, rồi TỰ DỌN (Sếp chốt 14/10): kiểm nhánh đã vào `origin/main` và file chưa commit chỉ là đồ tạm `.scratch/` ⇒ `orca worktree rm --worktree path:<wt> --force`, `git worktree prune`, `git branch -D` nhánh phòng + nhánh dự phòng `backup/<key>-*`/`phong/<key>-truoc-rebase*`, `make qa-drop KEY=<key>` nếu DB còn. Nhánh CHƯA vào main ⇒ không dọn, báo Sếp |
+| `room_done` | Báo Sếp phòng xong. Retro xong (thiếu `<wt>/.scratch/<key>/retro.md` ⇒ nhắn Manager viết, CHƯA dọn — LINEUP, RESULT từng mất retro vì dọn trước) ⇒ chép `retro.md` sang `state/retros/<KEY>.md`, đóng phiên Manager, rồi TỰ DỌN (Sếp chốt 14/10): kiểm nhánh đã vào `origin/main` và file chưa commit chỉ là đồ tạm `.scratch/` ⇒ đóng MỌI terminal của worktree (Manager + lane, `orca terminal list | grep <wt>`), `orca worktree rm --worktree path:<wt> --force` rồi CHỜ thư mục `<wt>` biến mất (≤60s; prune sớm ⇒ Orca báo "Delete failed", 25/10) ⇒ `git worktree prune`, `git branch -D` nhánh phòng + nhánh dự phòng `backup/<key>-*`/`phong/<key>-truoc-rebase*`, `make qa-drop KEY=<key>` nếu DB còn. Còn phòng active ⇒ `C note <KEY khác> "main vừa nhận <sha> từ <phòng>: rebase + make check trong ngày, đừng đợi tới gộp"` cho TỪNG phòng (25/10: luật máy UI-SYSTEM, khoá phiên UX-VAO chỉ lộ ở phòng khác lúc gộp). Dọn Playwright (Sếp chốt 25/10): không còn tiến trình `playwright-mcp` nào có cha là phiên của `<wt>` (`ps -axo pid,ppid,command \| grep playwright-mcp` → cwd của cha qua `lsof -a -p <ppid> -d cwd`) và không còn Chrome mồ côi có `--user-data-dir=…playwright_chromiumdev_profile` (cha đã chết) — còn thì `kill`; `rmdir` thư mục rỗng `$TMPDIR/playwright_chromiumdev_profile-*`, `playwright-artifacts-*`. Cuối: `orca worktree list \| grep <key>` rỗng. Nhánh CHƯA vào main ⇒ không dọn, báo Sếp |
 | `key_requested` | **Điều phối chìa khoá.** Nhắn Manager phòng `holder` (kiểm handle khác rỗng): `Thư ký: phòng <room> cần chìa khoá app (<reason>). Phòng bạn không chạy app nữa thì make stop rồi company.py key release <holder>; còn cần thì trả lời ước lượng bao lâu.` Không báo Sếp |
 | `key_released` có `handedTo` / `room_done`, `room_changed` có `keyHandedTo` | Nhắn Manager phòng được nhận: `Thư ký: phòng <X> đã có chìa khoá app, chạy app được.` Không báo Sếp |
 | Phòng giữ chìa khoá không trả lời / không nhả sau khi đã nhắn, và có phòng đang chờ | Báo Sếp: ai giữ bao lâu, ai chờ, đề xuất. Chỉ khi Sếp bảo thu hồi mới `company.py key release <holder> --note "Sếp thu hồi"` và nhắn phòng bị thu hồi dừng app |
@@ -65,6 +65,7 @@ Sự kiện do chính bạn ghi (`overlap`, `evidence`, `note` của Thư ký) t
 | `lane_stale` | Lane `running` đứng yên `minutes` phút, phòng không ghi gì. Đọc màn hình lane: `$ORCA terminal read --terminal <handle> --screen --limit 40` (kiểm handle khác rỗng). Đang chạy lệnh dài / đang nghĩ ⇒ không làm gì. Kẹt (chờ xác nhận, lỗi, dừng lượt mà chưa `lane set`) ⇒ nhắn Manager phòng đó: `Thư ký: lane <role> (<handle>) đứng yên <minutes>' — màn hình: <một dòng thấy gì>. Anh xem giúp.` Không báo Sếp, trừ khi Manager cũng không phản hồi |
 | `lane_error` | Màn hình lane (hay terminal Manager, `role=manager`) dừng ở dòng lỗi API/mạng `line`, không còn chạy. `role` khác `manager` ⇒ nhắn Manager phòng đó (kiểm `managerTerminal` khác rỗng): `Thư ký: lane <role> (<handle>) báo lỗi: <line> — gõ 'tiếp tục' / mở lại; at capacity thì mở lại lane với model khác (gpt-6-astra ↔ gpt-6.1-sol).` `role=manager` ⇒ tự gửi `tiếp tục` vào chính terminal đó (kiểm `handle` khác rỗng): `$ORCA terminal send --terminal <handle> --text 'tiếp tục'`, rồi đọc màn hình; chữ còn nằm ở ô nhập (Enter bị nuốt) ⇒ gửi Enter riêng `$ORCA terminal send --terminal <handle> --enter`. Không báo Sếp, trừ khi lỗi lặp lại sau khi đã xử lý |
 | `thu_ky_silent` | `room: null`. Chính nó là dấu bạn vừa ngủ quên (watcher chết hoặc lượt trước kết thúc không arm). Đọc từ dấu và xử lý mọi sự kiện dồn như thường, rồi arm lại. Không báo Sếp riêng; nếu đã dồn việc cho Sếp thì báo việc đó |
+| `db_down` | `room: null`. Container DB chung `sportshub-db` tắt (hay Docker tắt) — app chính và mọi phòng cùng lỗi. `docker start sportshub-db` rồi `docker exec sportshub-db pg_isready -U sportshub`; Docker Desktop tắt ⇒ báo Sếp bật. Tìm nguyên nhân: `docker inspect -f '{{.State.FinishedAt}}' sportshub-db`, lệnh `docker`/`make stop`/`db-stop` trong transcript các phiên quanh giờ đó. Báo Sếp MỘT dòng: tắt lúc mấy giờ, đã bật lại, nguyên nhân (hoặc chưa rõ) |
 
 ### 2. Chuyển tay câu trả lời từ board vào terminal Manager (chỉ khi `forward_failed`)
 Bình thường board server tự gửi đúng câu dưới đây ngay khi Sếp bấm. Thư ký chỉ làm tay khi có sự kiện `forward_failed`.
@@ -124,6 +125,9 @@ chỉ đọc `make check` local.
 Đọc log Manager, KHÔNG chạy lại mặc định (một lần `make check` trên bản cuối là đủ):
 1. Lấy claim của Manager: context của ask cổng 5/6 — SHA HEAD, số test, log `<wt>/.scratch/<key>/check-<sha>.log`.
 2. `git -C <wt> log -1 --format=%h` PHẢI bằng SHA trong tên log. `git -C <wt> status --porcelain` PHẢI rỗng (trừ `.scratch/`).
+   `git -C <wt> merge-base --is-ancestor main HEAD` PHẢI đúng — sai ⇒ main đã đi tiếp (phòng khác vừa gộp), số và câu
+   "đã trên main mới nhất" hết hiệu lực: chạy `git -C <wt> merge-tree --write-tree --name-only main HEAD`, nhắn Manager
+   rebase + check lại kèm danh sách file xung đột, báo Sếp ĐỪNG duyệt ask đó vội (25/10: UX-VAO-a5 trình lúc UX-TRAN vừa gộp, xung đột 4 file).
 3. Chỉ chạy lại khi SHA lệch, thiếu log, hoặc log bất thường (exit ≠ 0, thiếu dòng tổng kết). Khi đó (Bash
    `run_in_background: true`; watcher vẫn chạy song song; `web/node_modules` thiếu ⇒ `npm ci` trước):
    ```bash
@@ -143,7 +147,9 @@ chỉ đọc `make check` local.
 
 ⛔ **Báo ít** (Sếp duyệt 13/10): không gửi tin cho mỗi sự kiện. Chỉ báo khi có việc CHO SẾP — câu hỏi/cổng mới, lỗi
 `needsBoss`, số lệch, xung đột gộp thật, phòng xong, sự cố (lane treo, mất dữ liệu). Sự kiện thường (lane đổi trạng
-thái, ghi chú phối hợp, bug thường đóng/mở) KHÔNG nhắn — Sếp hỏi "tình hình?" thì trả một bản tóm tắt gom.
+thái, ghi chú phối hợp, bug thường đóng/mở) KHÔNG nhắn — Sếp hỏi "tình hình?" thì trả một bản tóm tắt gom, viết từ MÀN HÌNH thật
+(`$ORCA terminal read` Manager + mọi lane `running`) chứ không từ board: board ghi `running` cả khi lane đã xong hay
+chết (25/10 báo "QA đang chạy" trong lúc hai phòng đứng 2 giờ).
 Nhiều câu hỏi đến liền ⇒ gom thành MỘT tin.
 Chỉ báo khi một trong bốn:
 1. việc mới cho Sếp (ask mới, lỗi `needsBoss`, việc Sếp phải tự làm);
@@ -168,10 +174,13 @@ Có ask trên board ⇒ ghi ID và các lựa chọn để Sếp trả lời nga
 2. Ghi dấu: `wc -l < state/events.jsonl | tr -d ' ' > state/thu-ky.processed`
 3. Bash `run_in_background: true`, chỉ thức vì sự kiện cần phán đoán (lane đổi trạng thái, câu trả lời board đã tự chuyển, ask rút/mở lại thì không):
    ```bash
-   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,task_ask_answered,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,lane_error,thu_ky_silent
+   /Users/tien/sportshub-company/bin/wait-event.sh --timeout 14400 --types ask_opened,forward_failed,task_ask_answered,bug_opened,bug_changed,room_changed,room_done,key_requested,key_released,note,lane_stale,lane_error,thu_ky_silent,db_down
    ```
    Exit 0 in các dòng mới ⇒ vòng tiếp. Exit 2 = hết 4 giờ yên ắng ⇒ arm lại, không báo. Nhịp kiểm biết bạn còn canh
-   nhờ thấy tiến trình `wait-event.sh` không lọc `--room` — không cần thức định kỳ để báo còn sống.
+   nhờ thấy tiến trình `wait-event.sh` không lọc `--room` — không cần thức định kỳ để báo còn sống. Ngược lại, chính
+   watcher này bật lại nhịp kiểm nếu nó đã chết (stderr `wait-event: nhịp kiểm không chạy — đã bật lại`).
+   ⛔ Chép NGUYÊN lệnh trên, không tự rút bớt `--types`: 25/10 Thư ký chạy bản thiếu `room_changed`, `note` nên không
+   thức khi phòng sang `cho-gop`.
 4. Mỗi lúc một watcher. Không bao giờ kết thúc lượt mà không có nó.
 
 ## Nghiên cứu — Sếp nói "nghiên cứu …" hoặc nêu tính năng lớn
