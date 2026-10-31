@@ -123,6 +123,50 @@ class ServerTests(unittest.TestCase):
                          str(outside), f'{allowed}/link.png', f'{allowed}/../../../board.html', f'{allowed}/khong-co.png'):
                 self.assertEqual(self.request('GET', '/files' + path)[0], 404, path)
 
+    def test_files_html_and_svg_run_with_opaque_origin_on_every_way_of_opening(self):
+        # Sandbox của iframe chỉ áp trong cửa sổ xem; "Mở tab riêng" hay chuột giữa thì trang chạy cùng nguồn với board,
+        # script của nó gửi được câu trả lời giả tới terminal Manager. Header của server áp cho mọi đường mở.
+        if type(self).__name__ == 'LiveServerTests':
+            self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')
+        folder = self.root / 'wt-csp'
+        folder.mkdir(exist_ok=True)
+        (folder / 'p.html').write_text('<h1>x</h1>')
+        (folder / 'a.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+        (folder / 'b.png').write_bytes(b'x')
+        link = folder / 'fake.pdf'
+        if not link.is_symlink():
+            link.symlink_to(folder / 'p.html')
+        with mock.patch.dict(os.environ, {'SPORTSHUB_FILE_ROOTS': str(folder)}):
+            for name in ('p.html', 'a.svg', 'fake.pdf'):
+                headers = self.request('GET', f'/files{folder}/{name}')[1]
+                self.assertIn('sandbox', headers.get('Content-Security-Policy', ''), name)
+                self.assertNotIn('allow-same-origin', headers['Content-Security-Policy'])
+            self.assertIsNone(self.request('GET', f'/files{folder}/b.png')[1].get('Content-Security-Policy'))
+
+    def test_foreign_host_is_refused_so_dns_rebinding_reads_nothing(self):
+        port = self.port
+        for path in ('/api/state', '/', '/files/etc/hosts'):
+            self.assertEqual(self.request('GET', path, headers={'Host': f'evil.example:{port}'})[0], 403, path)
+        self.assertEqual(self.request('POST', '/api/answer', '{}', {'Host': 'evil.example', 'Content-Type': 'application/json', 'X-Company': '1'})[0], 403)
+        for host in (f'127.0.0.1:{port}', f'localhost:{port}'):
+            self.assertEqual(self.request('GET', '/api/health', headers={'Host': host})[0], 200)
+
+    def test_board_page_cannot_be_framed_by_other_sites(self):
+        self.assertEqual(self.request('GET', '/')[1].get('X-Frame-Options'), 'DENY')
+
+    def test_files_block_is_case_insensitive_and_json_is_not_served(self):
+        # Đĩa macOS không phân biệt hoa thường: .GIT cùng là .git. JSON có thể chứa thẻ đăng nhập của QA, không ai cần xem.
+        if type(self).__name__ == 'LiveServerTests':
+            self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')
+        folder = self.root / 'wt-case'
+        (folder / '.GIT').mkdir(parents=True, exist_ok=True)
+        (folder / '.GIT/x.md').write_text('x')
+        (folder / '.ENV.md').write_text('x')
+        (folder / 'ids.json').write_text('{}')
+        with mock.patch.dict(os.environ, {'SPORTSHUB_FILE_ROOTS': str(folder)}):
+            for name in ('.GIT/x.md', '.ENV.md', 'ids.json'):
+                self.assertEqual(self.request('GET', f'/files{folder}/{name}')[0], 404, name)
+
     def test_state_carries_repo_root_for_links_of_tasks_without_room(self):
         if type(self).__name__ == 'LiveServerTests':
             self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')

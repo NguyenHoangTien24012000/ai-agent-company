@@ -36,6 +36,10 @@ AREA_PATH = re.compile(r'^(?:server/src/main/java/com/sportshub/([a-z]+)/|web/sr
 NOT_BEHAVIOUR = re.compile(r'(\.test\.[a-z]+$|/testing/|/locales/)')
 
 
+class UserError(Exception):
+    pass
+
+
 def git(worktree, *args):
     return subprocess.run(['git', '-C', str(worktree), *args], check=True, capture_output=True, text=True).stdout
 
@@ -51,23 +55,51 @@ def needed_diagrams(files):
     return needed
 
 
+def rendered_problem(worktree, slug):
+    """HTML của phòng phải sinh từ đúng nguồn đang có: git tự gộp hai phòng không xung đột thì HTML vẫn là bản trước gộp."""
+    folder = worktree / '.archify' / 'luong-app'
+    source = worktree / 'docs' / 'luong' / f'{slug}.json'
+    try:
+        json.loads(source.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return 'thiếu file nguồn hoặc JSON hỏng'
+    try:
+        receipt = json.loads((folder / f'{slug}.finalize.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return 'chưa finalize'
+    if not (folder / f'{slug}.html').exists():
+        return 'chưa finalize'
+    if receipt.get('specification', {}).get('sha256') != hashlib.sha256(source.read_bytes()).hexdigest():
+        return 'HTML cũ hơn nguồn, finalize lại'
+    return None
+
+
+def on_room_branch(worktree):
+    return git(worktree, 'rev-parse', 'HEAD') != git(worktree, 'rev-parse', 'main')
+
+
 def check(key, worktree):
     """Máy chỉ biết mảng nào bị đụng, không biết luồng có đổi thật không ⇒ Techlead vẽ, hoặc ghi lý do một dòng ở KHONG-DOI.md."""
-    files = git(worktree, 'diff', '--name-only', 'main...HEAD').split()
+    if not on_room_branch(worktree):
+        print('WORKTREE phải là nhánh của phòng và chưa gộp; diff rỗng thì không kiểm được gì.')
+        return 2
+    # --no-renames: chuyển file sang mảng khác thì mảng cũ cũng bị tính là đổi
+    files = git(worktree, 'diff', '--no-renames', '--name-only', 'main...HEAD').split()
     room = worktree / '.scratch' / key.lower() / 'luong'
-    drawn = {Path(name).stem for name in files if re.fullmatch(r'docs/luong/[^/]+\.json', name)}
-    drawn |= {page.stem for page in room.glob('*.html')}
+    drawn = {Path(name).stem for name in files if re.fullmatch(r'docs/luong/[^/]+\.json', name) and (worktree / name).exists()}
     try:
         waived = {line.split(':', 1)[0].strip() for line in (room / 'KHONG-DOI.md').read_text(encoding='utf-8').splitlines() if ':' in line}
     except OSError:
         waived = set()
-    missing = {slug: names for slug, names in needed_diagrams(files).items() if slug not in drawn | waived}
-    if not missing:
+    problems = [f'- {slug}: {problem}' for slug in sorted(drawn) if (problem := rendered_problem(worktree, slug))]
+    for slug, names in sorted(needed_diagrams(files).items()):
+        if slug not in drawn | waived:
+            problems.append(f'- {slug}: đổi {", ".join(names[:3])}' + (f' và {len(names) - 3} file khác' if len(names) > 3 else ''))
+    if not problems:
         print('Sơ đồ luồng: đủ.')
         return 0
-    print('THIẾU sơ đồ luồng. Vẽ lại, hoặc ghi "<slug>: lý do" vào .scratch/<key>/luong/KHONG-DOI.md nếu bước đi không đổi:')
-    for slug, names in sorted(missing.items()):
-        print(f'- {slug}: đổi {", ".join(names[:3])}' + (f' và {len(names) - 3} file khác' if len(names) > 3 else ''))
+    print('THIẾU sơ đồ luồng. Sửa docs/luong/<slug>.json rồi finalize, hoặc ghi "<slug>: lý do" vào .scratch/<key>/luong/KHONG-DOI.md nếu bước đi không đổi:')
+    print('\n'.join(problems))
     return 1
 
 
@@ -86,50 +118,29 @@ def load_sources() -> dict:
 
 
 def publish(key: str, worktree: Path) -> list[str]:
-    old = worktree / '.scratch' / key.lower() / 'luong'      # cách cũ, cho phòng mở trước khi nguồn vào git
-    new = worktree / '.archify' / 'luong-app'
-    if new.resolve() == DEST.resolve():
-        return []
+    """Kiểm hết rồi mới chép: sai một sơ đồ thì không chép sơ đồ nào."""
+    if worktree.resolve() == REPO.resolve():
+        raise UserError('WORKTREE phải là thư mục của phòng, không phải repo gốc.')
+    folder = worktree / '.archify' / 'luong-app'
+    slugs = sorted(page.stem for page in folder.glob('*.html') if SLUG.match(page.stem))
+    problems = [f'{slug}: {problem}' for slug in slugs if (problem := rendered_problem(worktree, slug))]
+    if problems:
+        raise UserError('CHƯA CHÉP GÌ. ' + '; '.join(problems))
     sources = load_sources()
     today = dt.date.today().isoformat()
     commit = git(worktree, 'rev-parse', '--short', 'HEAD').strip()
-    # `.goc.json` (cách cũ, Techlead ghi): slug → sha256 của luong-app/<slug>/candidate.json lúc chép về sửa. Hai phòng cùng
-    # sửa một luồng ⇒ phòng gộp sau phải vẽ lại trên bản của phòng gộp trước, không đè mất nó. Nguồn trong git thì git lo.
-    try:
-        base = json.loads((old / '.goc.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        base = {}
-    done, stale = [], []
-    for page in sorted(list(old.glob('*.html')) + list(new.glob('*.html'))):
-        slug, folder = page.stem, page.parent
-        if not SLUG.match(slug):
-            continue
-        current = DEST / slug / 'candidate.json'
-        if folder == old and current.exists() and base.get(slug) != hashlib.sha256(current.read_bytes()).hexdigest():
-            stale.append(slug)
-            continue
-        DEST.mkdir(parents=True, exist_ok=True)
-        (DEST / slug).mkdir(exist_ok=True)
-        tracked = worktree / 'docs' / 'luong' / f'{slug}.json'
-        origin = tracked if tracked.exists() else folder / slug / 'candidate.json'
-        if origin.exists():
-            data = json.loads(origin.read_text(encoding='utf-8'))
-            # meta.output của phòng có thể trỏ vào .scratch — đưa về chỗ thật để lần sửa sau finalize đúng đích
-            data.setdefault('meta', {})['output'] = f'.archify/luong-app/{slug}.html'
-            current.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    for slug in slugs:
+        (DEST / slug).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(worktree / 'docs' / 'luong' / f'{slug}.json', DEST / slug / 'candidate.json')
         for extra in folder.glob(f'{slug}.*'):
             shutil.copy2(extra, DEST / extra.name)
         sources[slug] = {'room': key, 'date': today, 'commit': commit}
-        done.append(slug)
-    if done:
         SOURCES.write_text(json.dumps(sources, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    for slug in stale:
-        print(f'CHƯA CHÉP {slug}: luong-app đã đổi sau khi phòng chép về (hoặc thiếu .goc.json) — Techlead vẽ lại '
-              f'trên bản mới rồi chạy lại', file=sys.stderr)
-    return done
+    return slugs
 
 
 def build_index() -> int:
+    DEST.mkdir(parents=True, exist_ok=True)
     sources = load_sources()
     pages = sorted(p for p in DEST.glob('*.html') if p.name != 'index.html' and SLUG.match(p.stem))
     rows = [(p.stem, title_of(p), sources.get(p.stem, {})) for p in pages]
@@ -177,8 +188,12 @@ def main() -> None:
     if not args.index_only:
         if not (args.key and args.worktree):
             parser.error('cần KEY và WORKTREE, hoặc --index-only')
-        done = publish(args.key, Path(args.worktree))
-        print(f"chép {len(done)} sơ đồ: {', '.join(done) or 'phòng không có .scratch/<key>/luong/'}")
+        try:
+            done = publish(args.key, Path(args.worktree))
+        except UserError as exc:
+            print(exc, file=sys.stderr)
+            sys.exit(1)
+        print(f"chép {len(done)} sơ đồ: {', '.join(done) or 'phòng không đổi sơ đồ nào'}")
     print(f'mục lục: {build_index()} luồng → {DEST / "index.html"}')
 
 

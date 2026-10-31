@@ -21,8 +21,13 @@ ORCA = os.environ.get('ORCA', '/Applications/Orca.app/Contents/Resources/bin/orc
 REPO_ROOT = '/Users/tien/Claude/sportshub'
 WORKTREES_ROOT = '/Users/tien/orca/workspaces/sportshub'
 # Chỉ loại file Sếp cần xem trên board; bí mật (.env, *.key, *.pem) không có đuôi nào ở đây.
-VIEWABLE = {'.html', '.htm', '.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf', '.md', '.txt', '.log', '.json'}
+# JSON không có: file QA có thể chứa thẻ đăng nhập.
+VIEWABLE = {'.html', '.htm', '.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf', '.md', '.txt', '.log'}
 PLAIN_TEXT = {'.md', '.txt', '.log'}
+RUNS_SCRIPT = {'.html', '.htm', '.svg'}
+# Áp cho mọi đường mở (cửa sổ xem, "Mở tab riêng", chuột giữa): không có allow-same-origin nên script của trang không
+# đọc được /api/state, không gửi được /api/answer. Câu trả lời giả sẽ bị gõ thẳng vào terminal Manager.
+OPAQUE_ORIGIN = 'sandbox allow-scripts allow-popups allow-downloads'
 
 
 def repo_root():
@@ -33,16 +38,17 @@ def viewable_file(raw_path):
     """Đường tuyệt đối sau /files, trả Path nếu được phép xem; None nếu không.
 
     Board chạy http:// nên trình duyệt chặn link file:// mà không báo gì: Sếp bấm ảnh, báo cáo không ra (31/10).
-    Server chỉ nghe loopback; vẫn giới hạn thư mục và đuôi, giải symlink trước khi so.
+    Giới hạn thư mục và đuôi, giải symlink trước khi so; Host lạ đã bị chặn ở allowed_host.
     """
-    roots = os.environ.get('SPORTSHUB_FILE_ROOTS') or f'{REPO_ROOT}:{WORKTREES_ROOT}'
+    roots = os.environ.get('SPORTSHUB_FILE_ROOTS') or f'{repo_root()}:{WORKTREES_ROOT}'
     try:
         target = Path(unquote(raw_path)).resolve(strict=True)
     except (OSError, RuntimeError, ValueError):
         return None
     if not target.is_file() or target.suffix.lower() not in VIEWABLE:
         return None
-    if '.git' in target.parts or any(part.startswith('.env') for part in target.parts):
+    parts = [part.lower() for part in target.parts]   # đĩa macOS không phân biệt hoa thường
+    if '.git' in parts or any(part.startswith('.env') for part in parts):
         return None
     for root in roots.split(':'):
         try:
@@ -87,8 +93,18 @@ def forward_answer(company, ask, orca=None):
 
 
 class BoardHandler(BaseHTTPRequestHandler):
-    def send_bytes(self, status, payload, content_type):
+    def allowed_host(self):
+        """Chặn DNS rebinding: tên miền lạ đổi IP về máy này thì trình duyệt coi là cùng nguồn, đọc được /api/state và /files."""
+        host, port = self.headers.get('Host'), self.server.server_address[1]
+        if host is None or host in (f'127.0.0.1:{port}', f'localhost:{port}'):
+            return True
+        self.send_json(403, {'ok': False, 'error': 'Host không hợp lệ.'})
+        return False
+
+    def send_bytes(self, status, payload, content_type, extra_headers=None):
         self.send_response(status)
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(payload)))
         self.send_header('Cache-Control', 'no-store')
@@ -101,6 +117,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                         'application/json; charset=utf-8')
 
     def do_GET(self):
+        if not self.allowed_host():
+            return
         path = urlsplit(self.path).path
         if path == '/api/health':
             self.send_json(200, {'ok': True})
@@ -117,7 +135,13 @@ class BoardHandler(BaseHTTPRequestHandler):
             suffix = target.suffix.lower()
             kind = 'text/plain' if suffix in PLAIN_TEXT else mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
             charset = '; charset=utf-8' if kind.startswith('text/') or kind in ('application/json', 'text/javascript') else ''
-            self.send_bytes(200, target.read_bytes(), kind + charset)
+            try:
+                payload = target.read_bytes()
+            except OSError:
+                self.send_json(404, {'ok': False, 'error': 'Không tìm thấy file.'})
+                return
+            self.send_bytes(200, payload, kind + charset,
+                            {'Content-Security-Policy': OPAQUE_ORIGIN} if suffix in RUNS_SCRIPT else None)
         elif re.fullmatch(r'/retros/[A-Z0-9-]{2,24}\.md', path):
             # Bài rút kinh nghiệm của phòng đã xong (link ở tab Done); KEY lọc bằng regex nên không thoát được thư mục.
             try:
@@ -134,11 +158,13 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self.send_json(404, {'ok': False, 'error': 'Không tìm thấy file.'})
                 return
             content_type = 'application/javascript' if relative.endswith('.js') else 'text/html'
-            self.send_bytes(200, payload, content_type + '; charset=utf-8')
+            self.send_bytes(200, payload, content_type + '; charset=utf-8', {'X-Frame-Options': 'DENY'})
         else:
             self.send_json(404, {'ok': False, 'error': 'Không tìm thấy đường dẫn.'})
 
     def do_POST(self):
+        if not self.allowed_host():
+            return
         path = urlsplit(self.path).path
         if path not in ('/api/answer', '/api/task'):
             self.send_json(404, {'ok': False, 'error': 'Không tìm thấy đường dẫn.'})
