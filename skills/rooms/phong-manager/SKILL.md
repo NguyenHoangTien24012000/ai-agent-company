@@ -84,6 +84,19 @@ C ask add $KEY --kind quyet --title "…" --option a="…" --option b="…" --re
 C ask add $KEY --kind thaotac --title "Bật Docker Desktop"                            # việc Sếp phải tự làm
 ```
 
+⛔ **Viết cho người không đọc code** (Sếp 31/10: "đọc chẳng hiểu gì để mà đưa ra quyết định"). Sếp quyết bằng cái người dùng
+thấy, không bằng cách làm. Mọi ask theo khuôn, ≤ 8 dòng (dòng `Chặn:` để cuối, nói bằng lời: "Phòng chưa làm được phần X"):
+- **Tiêu đề** là câu hỏi đời thường. Không `Cổng N`, không "thiết kế kỹ thuật", không mã.
+- **Chuyện là:** tình huống cụ thể có người thật ("An là đội trưởng FC A, bấm…"), không định nghĩa trừu tượng.
+- **Mỗi phương án:** người dùng thấy/gặp gì, hậu quả gì; không nói code sửa ở đâu.
+- **Đề xuất:** chọn gì, một câu vì sao, bằng lời thường.
+- **CẤM trong title/context/option:** tên file, class, endpoint, cột, biến, mã lỗi, `file:dòng`, mã nội bộ (D1, Q6, R3, TK5, a7 trần),
+  tên lane, ký hiệu `⇒`, đường dẫn file, câu "open …" hay "dán vào trình duyệt". File cần Sếp xem đưa vào `--link` (đường tuyệt đối
+  hoặc tính từ worktree): board hiện nút con mắt có tên dễ đọc, bấm mở cửa sổ ngay trên thẻ. Thuật ngữ không tránh được ⇒ giải thích trong ngoặc.
+- **Cổng 4** chỉ gồm: người dùng thấy khác gì · dữ liệu lưu thêm gì (nói bằng lời) · chỗ nào khó quay lại · thứ đổi trong luật.
+- **Tự đọc lại trước khi gửi:** người chơi bóng không biết code đọc có chọn được không? Không ⇒ viết lại. Việc Sếp không chọn
+  được vì thuần kỹ thuật ⇒ tự quyết, ghi "Đã tự quyết", đừng hỏi.
+
 Câu hỏi về lộ dữ liệu (ai thấy gì) ⇒ context liệt kê MỌI trường response sẽ hiện, không chỉ trường đang bàn (TEAM-SEARCH quên tên đội trưởng ⇒ phải hỏi thêm một câu). Context khẳng định code đang làm gì ⇒ đọc code trước.
 
 `quyet` thiếu 2 phương án ⇒ CLI từ chối. Sếp chọn `khac` ⇒ câu trả lời nằm trong note. `thaotac` tự có nút
@@ -222,7 +235,10 @@ Mở cả hai cùng lượt (vai không có trong gói thì bỏ). Đọc báo c
   thành công/lỗi, thông báo nổi hay khối cố định) ở MỌI trang đích của luồng, không chỉ trang chính — UX-VAO vẽ khối
   báo cho trang nhà, code làm toast cho ba đích, phải hỏi lại Sếp ở cổng 6.
 - Techlead (`$R/techlead.md`, skill `phong-techlead`) ⇒ Manager soi đối chiếu spec ⇒ ask cổng 4: cột/bảng cụ thể,
-  ADR, thư viện mới (W8 — chưa ok thì không ai viết migration/thêm dependency).
+  ADR, thư viện mới (W8 — chưa ok thì không ai viết migration/thêm dependency). Ask cổng 4 kèm link `.archify/luong-app/<slug>.html` trong worktree
+  (sơ đồ luồng mới/sửa, mục "Sơ đồ luồng" của skill `phong-techlead`) để Sếp xem luồng cùng lúc duyệt cách làm.
+- **Sơ đồ luồng theo bản cuối** (Sếp chốt 27/10): sau cổng 4 mà bước đi/trạng thái đổi (ask Sếp, lỗi QA, review) ⇒
+  mở lại Techlead sửa `docs/luong/<slug>.json` trước cổng 6; file nguồn commit cùng nhánh, HTML git bỏ qua. Máy của Thư ký kiểm khi xin gộp.
 - **Hợp đồng chung giữa phòng** (cửa khoá, thứ tự lỗi, cài đặt/khái niệm nhiều phòng cùng cần): Techlead đã soi các
   phòng đang chạy (`C room list`). Phòng khác đã có ⇒ dùng lại, `C note` sang phòng đó; chưa ai có ⇒ phòng này chốt
   trong ADR nháp + note cho phòng liên quan TRƯỚC khi dev viết. Hai phòng chốt khác nhau ⇒ ask Sếp ngay, không đợi gộp.
@@ -315,7 +331,7 @@ do việc khác ⇒ vẫn trình, nói rõ; đừng coi "make check local xanh" 
 
 Ask MỘT lần: `C ask add $KEY --kind duyet --gate 6 --also-gate 5 --title "Check cuối + cho gộp lát …"` với context:
 **nguyên văn** dòng KẾT LUẬN + mọi 🔴/🟡 của review, tóm tắt QA (ca đạt/lỗi, bug mở/đóng), số test sau rebase, commit
-list (`git log --oneline main..HEAD`), danh sách "Đã tự quyết". Rebase phải sửa xung đột lớn (đổi logic, không chỉ số
+list (`git log --oneline main..HEAD`), danh sách "Đã tự quyết", sơ đồ luồng (khớp bản cuối, hoặc "không đổi luồng"). Rebase phải sửa xung đột lớn (đổi logic, không chỉ số
 migration/docs) ⇒ tách lại: ask cổng 5 trước rồi cổng 6. Chỉ khi ask đó = `ok`:
 
 ```bash

@@ -38,8 +38,25 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
 ## ADR nháp                    ← trỏ `adr-nhap-<tên>.md` nếu có; không có thì ghi "không có quyết định khó đảo ngược"
 ## Thư viện mới                ← tên@phiên bản · vì sao · phương án không cần nó · CẦN SẾP DUYỆT
 ## Cố ý chưa làm               ← ghi vào backlog khi gộp (W7)
+## Sơ đồ luồng                 ← slug · mới/sửa · một dòng đổi gì; không đổi luồng nào thì ghi "không đổi luồng"
 ## Cần Sếp duyệt (cổng 4)      ← danh sách gạch đầu dòng, mỗi dòng một quyết định
 ```
+
+## Sơ đồ luồng — vẽ cùng bản thiết kế (Sếp chốt 27/10, 31/10)
+
+Thư mục `/Users/tien/Claude/sportshub/.archify/luong-app/` (HTML để xem, chỉ trên máy Sếp) phải luôn đúng là app đang có gì.
+Nguồn nằm trong git: `docs/luong/<slug>.json`, đi cùng code của phòng; danh sách luồng ở `README.md` của thư mục đó.
+
+1. Đọc `/Users/tien/Claude/sportshub/.claude/skills/archify/SKILL.md` (skill chỉ có ở repo gốc, worktree không có) và
+   làm theo; CLI `node /Users/tien/Claude/sportshub/.claude/skills/archify/bin/archify.mjs`, `--repo-root` là worktree.
+2. Phòng đổi một luồng đã có ⇒ sửa ngay `docs/luong/<slug>.json` trong worktree: giữ slug, giữ phần không đổi. Luồng mới ⇒
+   slug mới `<NN>-<tên>` (NN = số lớn nhất + 1), `meta.locale: "vi"`, `meta.translations` lấy nguyên `luong-app/_vi-viewer.json`.
+   `meta.output` luôn là `.archify/luong-app/<slug>.html` (git bỏ qua). File nguồn luôn đầy đủ, không tách bản gốc/bản dịch.
+3. `finalize` ra đúng `meta.output` trong worktree. Nhãn tiếng Việt có dấu; sự thật lấy từ thiết kế đã chốt + code thật, không bịa.
+4. Liệt kê ở mục "Sơ đồ luồng" của `techlead.md`. Báo Manager commit file nguồn cùng nhánh. Rebase xung đột file nguồn ⇒ giữ
+   phần của cả hai, finalize lại.
+5. Thư ký chạy máy kiểm khi phòng xin gộp: đổi code một mảng (server, web, hồ sơ tính năng) mà sơ đồ mảng đó không đổi ⇒ trả về.
+   Bước đi thật sự không đổi (chỉ chữ, chỉ giao diện) ⇒ ghi `<slug>: lý do` vào `.scratch/<key>/luong/KHONG-DOI.md`, không vẽ.
 
 ## Luật thiết kế
 

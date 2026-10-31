@@ -96,6 +96,39 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request('GET', '/state/company.json')[0], 404)
         self.assertEqual(self.request('GET', '/../docs/CONTRACT.md')[0], 404)
 
+    def test_files_route_serves_only_allowed_roots_and_types(self):
+        if type(self).__name__ == 'LiveServerTests':
+            self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')
+        # Board chạy http:// nên trình duyệt chặn link file:// âm thầm: Sếp bấm ảnh, báo cáo mà không ra gì (31/10).
+        allowed = self.root / 'wt/.scratch/x'
+        allowed.mkdir(parents=True)
+        (allowed / 'a b.png').write_bytes(b'PNGDATA')
+        (allowed / 'page.html').write_text('<h1>x</h1>')
+        (allowed / '.env.local').write_text('SECRET=1')
+        (allowed / 'secret.key').write_text('k')
+        (self.root / 'wt/.git').mkdir()
+        (self.root / 'wt/.git/config.html').write_text('x')
+        outside = self.root.parent / (self.root.name + '-ngoai.png')
+        outside.write_bytes(b'x')
+        self.addCleanup(outside.unlink)
+        (allowed / 'link.png').symlink_to(outside)
+        with mock.patch.dict(os.environ, {'SPORTSHUB_FILE_ROOTS': str(self.root / 'wt')}):
+            status, headers, payload = self.request('GET', f'/files{allowed}/a%20b.png')
+            self.assertEqual((status, payload), (200, b'PNGDATA'))
+            self.assertEqual(headers['Content-Type'], 'image/png')
+            status, headers, _ = self.request('GET', f'/files{allowed}/page.html')
+            self.assertEqual(status, 200)
+            self.assertIn('text/html', headers['Content-Type'])
+            for path in (f'{allowed}/.env.local', f'{allowed}/secret.key', f'{self.root}/wt/.git/config.html',
+                         str(outside), f'{allowed}/link.png', f'{allowed}/../../../board.html', f'{allowed}/khong-co.png'):
+                self.assertEqual(self.request('GET', '/files' + path)[0], 404, path)
+
+    def test_state_carries_repo_root_for_links_of_tasks_without_room(self):
+        if type(self).__name__ == 'LiveServerTests':
+            self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')
+        with mock.patch.dict(os.environ, {'SPORTSHUB_REPO': '/tmp/repo-thu'}):
+            self.assertEqual(json.loads(self.request('GET', '/api/state')[2])['repoRoot'], '/tmp/repo-thu')
+
     def test_csrf_rejections_leave_ask_open(self):
         ask_id = self.ask()
         for headers in [

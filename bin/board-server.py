@@ -4,19 +4,53 @@
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import mimetypes
 import os
 import re
 from pathlib import Path
 import subprocess
 import sys
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from company import Company, UserError, effective_options
 
 ORCA = os.environ.get('ORCA', '/Applications/Orca.app/Contents/Resources/bin/orca')
+REPO_ROOT = '/Users/tien/Claude/sportshub'
+WORKTREES_ROOT = '/Users/tien/orca/workspaces/sportshub'
+# Chỉ loại file Sếp cần xem trên board; bí mật (.env, *.key, *.pem) không có đuôi nào ở đây.
+VIEWABLE = {'.html', '.htm', '.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf', '.md', '.txt', '.log', '.json'}
+PLAIN_TEXT = {'.md', '.txt', '.log'}
+
+
+def repo_root():
+    return os.environ.get('SPORTSHUB_REPO', REPO_ROOT)
+
+
+def viewable_file(raw_path):
+    """Đường tuyệt đối sau /files, trả Path nếu được phép xem; None nếu không.
+
+    Board chạy http:// nên trình duyệt chặn link file:// mà không báo gì: Sếp bấm ảnh, báo cáo không ra (31/10).
+    Server chỉ nghe loopback; vẫn giới hạn thư mục và đuôi, giải symlink trước khi so.
+    """
+    roots = os.environ.get('SPORTSHUB_FILE_ROOTS') or f'{REPO_ROOT}:{WORKTREES_ROOT}'
+    try:
+        target = Path(unquote(raw_path)).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not target.is_file() or target.suffix.lower() not in VIEWABLE:
+        return None
+    if '.git' in target.parts or any(part.startswith('.env') for part in target.parts):
+        return None
+    for root in roots.split(':'):
+        try:
+            target.relative_to(Path(root).resolve())
+            return target
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def answer_text(ask):
@@ -72,9 +106,18 @@ class BoardHandler(BaseHTTPRequestHandler):
             self.send_json(200, {'ok': True})
         elif path == '/api/state':
             try:
-                self.send_json(200, self.server.company.snapshot())
+                self.send_json(200, {**self.server.company.snapshot(), 'repoRoot': repo_root()})
             except (OSError, ValueError):
                 self.send_json(500, {'ok': False, 'error': 'Không đọc được trạng thái.'})
+        elif path.startswith('/files/'):
+            target = viewable_file(path[len('/files'):])
+            if target is None:
+                self.send_json(404, {'ok': False, 'error': 'Không tìm thấy file.'})
+                return
+            suffix = target.suffix.lower()
+            kind = 'text/plain' if suffix in PLAIN_TEXT else mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
+            charset = '; charset=utf-8' if kind.startswith('text/') or kind in ('application/json', 'text/javascript') else ''
+            self.send_bytes(200, target.read_bytes(), kind + charset)
         elif re.fullmatch(r'/retros/[A-Z0-9-]{2,24}\.md', path):
             # Bài rút kinh nghiệm của phòng đã xong (link ở tab Done); KEY lọc bằng regex nên không thoát được thư mục.
             try:
