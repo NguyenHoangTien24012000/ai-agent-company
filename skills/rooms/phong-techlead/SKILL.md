@@ -19,7 +19,7 @@ Bạn thiết kế, KHÔNG code. Sản phẩm là một file `.scratch/<key>/tec
    `~/orca/workspaces/sportshub/<key>/.scratch/<key>/techlead.md` của từng phòng. Tìm thứ trùng nghĩa (cửa khoá, thứ tự
    lỗi, cột `team_settings`, khoá múi giờ…) — đợt trước hai cặp phòng viết trùng mà chỉ lộ lúc gộp.
 6. Skill: `server-khuon` (khuôn server thật — thắng khi lệch), `postgres-pro`, `flyway-migrations`; đụng vị trí thì `postgis`,
-   `design-postgis-tables`; API thì `api-designer`; bảng từ vựng/ADR thì `domain-modeling` (plugin mattpocock-skills).
+   `design-postgis-tables`; API thì `api-designer`; đường gọi mới, quyền, đăng nhập, tiền, tải file thì `springboot-security` + `docs/agents/bao-mat.md`; bảng từ vựng/ADR thì `domain-modeling` (plugin mattpocock-skills).
 
 ## Khuôn `techlead.md`
 

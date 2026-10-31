@@ -18,6 +18,7 @@ Cần file khác ⇒ `## Blocked On`, không tự sửa.
 - `.claude/skills/server-khuon/SKILL.md` — BẮT BUỘC: khuôn server thật của repo, thắng mọi tài liệu khác khi lệch.
 - `.claude/skills/jpa-patterns/SKILL.md` — entity, N+1, giao dịch (đọc khối "⛔ ĐỌC KHỐI NÀY TRƯỚC" trước).
 - Có migration: `.claude/skills/flyway-migrations/SKILL.md`. Đụng vị trí: `.claude/skills/postgis/SKILL.md`.
+- Đường gọi mới, quyền, đăng nhập, tiền, tải file: `.claude/skills/springboot-security/SKILL.md` (đọc khối đầu trước), `docs/agents/bao-mat.md` mục "Soi kỹ".
 
 ## Quyết định của Sếp (chép NGUYÊN VĂN, kèm id — không tóm tắt)
 <mỗi dòng: `<KEY>-aN: <nguyên văn>`>

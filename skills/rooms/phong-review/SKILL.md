@@ -36,6 +36,14 @@ Mỗi mục sau lệch là một lỗi, xếp mức theo luật review (sai nghi
 - Mỗi luật ở mục "Luật luôn đúng → chặn ở đâu → test nào" thật sự chặn ở đúng chỗ đã ghi, và có đúng test đó.
 - Việc spec ghi "cố ý không làm" mà code lại làm ⇒ lỗi phạm vi (W7).
 
+## Soát bảo mật — phòng nào cũng làm (Sếp chốt 31/10)
+
+Đọc `docs/agents/bao-mat.md` rồi `.claude/skills/security-audit/SKILL.md`, dùng **chế độ hướng dẫn** trên diff của phòng: không chạy
+đủ sáu giai đoạn, không tạo thư mục báo cáo, không chạy code. Mở thêm tài liệu kèm theo đúng phần diff chạm: `ATTACK-CLASSES.md`
+(luôn), `WEB-PROTOCOL-AND-AUTH.md` (đường gọi server, đăng nhập, quyền), `DATA-ISOLATION-AND-LIFECYCLE.md` (dữ liệu giữa các đội, xoá,
+ảnh), `CLIENT-SIDE.md` (web). Phòng chỉ đổi giao diện ⇒ vẫn soi lộ dữ liệu trên màn, link ngoài, nội dung chèn HTML.
+Mỗi nghi ngờ tự kiểm lại trên code (H2). Báo theo `BM1`; lỗi kèm: ai bị hại, mất gì, đường đi trong code.
+
 ## Trả về — `.scratch/<key>/review.md`
 
 Đúng "Hình dạng báo cáo" của luật review, tiếng Việt:
@@ -51,6 +59,8 @@ Phạm vi: <commit đầu>..<HEAD> + <n> file chưa commit · vòng <n>
 …
 ## Đối chiếu techlead.md + spec
 <khớp / lệch từng mục ở trên>
+## Bảo mật
+<đã soi những ranh giới nào; phát hiện nằm ở danh sách lỗi trên, mã BM1>
 
 ĐÃ SOI MÀ KHÔNG THẤY LỖI: <nhóm luật đã soi và sạch; nhóm bỏ qua vì diff không chạm>
 LUẬT CẦN CHỦ NHÂN XEM LẠI: <chỉ khi luật mơ hồ hay đánh nhau — không tự quyết>

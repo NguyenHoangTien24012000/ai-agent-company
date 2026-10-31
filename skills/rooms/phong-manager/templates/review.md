@@ -15,7 +15,8 @@ Chỉ đọc mọi thứ khác. Không sửa code, không chạy `git add/commit
 - Bộ luật `docs/architecture/03-luat-review.md` + `.claude/agents/reviewer.md` — nguồn chính, luôn đọc.
 - Khuôn để so: `.claude/skills/server-khuon/SKILL.md`, `.claude/skills/web-khuon/SKILL.md`.
 - Java: `.claude/skills/java-review-patterns/SKILL.md`. Có migration: `.claude/skills/flyway-migrations/SKILL.md`.
-- Đụng đăng nhập/quyền: `.claude/skills/springboot-security/SKILL.md`, `.claude/skills/security-reviewer/SKILL.md`.
+- Bảo mật, phòng nào cũng làm: `docs/agents/bao-mat.md`, `.claude/skills/security-audit/SKILL.md` (chế độ hướng dẫn, xem mục "Soát bảo mật" của `phong-review`).
+- Đụng đăng nhập/quyền: `.claude/skills/springboot-security/SKILL.md`.
 
 ## Problem
 Soi toàn bộ thay đổi của phòng: `git diff main...HEAD` + `git status --porcelain` (gồm file chưa commit).
@@ -36,6 +37,7 @@ Soi toàn bộ thay đổi của phòng: `git diff main...HEAD` + `git status --
 ## Acceptance Criteria
 - [ ] `review.md` đúng "Hình dạng báo cáo": dòng KẾT LUẬN đầu, mỗi lỗi có mã luật, `file:dòng`, hỏng khi nào, sửa thế nào
 - [ ] Có mục đối chiếu techlead.md + spec
+- [ ] Có mục `## Bảo mật` ghi đã soi những ranh giới nào
 - [ ] Dòng `ĐÃ SOI MÀ KHÔNG THẤY LỖI: …`
 
 ## Before You Report Done
