@@ -15,6 +15,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
+from urllib.parse import quote
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -142,6 +143,21 @@ class ServerTests(unittest.TestCase):
                 self.assertIn('sandbox', headers.get('Content-Security-Policy', ''), name)
                 self.assertNotIn('allow-same-origin', headers['Content-Security-Policy'])
             self.assertIsNone(self.request('GET', f'/files{folder}/b.png')[1].get('Content-Security-Policy'))
+
+    def test_file_type_comes_from_real_suffix_not_from_reading_the_name_as_url(self):
+        # Python mới đọc tên như URL: `ab:x.html#.png` ra text/html trong khi đuôi thật là .png, lọt khỏi sandbox
+        if type(self).__name__ == 'LiveServerTests':
+            self.skipTest('server chạy tiến trình riêng, không nhận biến môi trường vá trong test')
+        folder = self.root / 'wt-kieu'
+        folder.mkdir(exist_ok=True)
+        cases = {'ab:x.html#.png': 'image/png', 'ab:x.html?.png': 'image/png', 'ab:y.svg?.pdf': 'application/pdf',
+                 'THAT.SVG': 'image/svg+xml', 'trang.HTML': 'text/html; charset=utf-8', 'ghi.md': 'text/plain; charset=utf-8'}
+        # Python cũ đọc đúng cả khi gọi guess_type với tên, nên chặn hẳn việc gọi để test đỏ trên mọi phiên bản
+        with mock.patch.dict(os.environ, {'SPORTSHUB_FILE_ROOTS': str(folder)}), mock.patch('mimetypes.guess_type', side_effect=AssertionError):
+            for name, kind in cases.items():
+                (folder / name).write_text('<script>1</script>')
+                status, headers, _ = self.request('GET', f'/files{folder}/{quote(name)}')
+                self.assertEqual((status, headers['Content-Type']), (200, kind), name)
 
     def test_foreign_host_is_refused_so_dns_rebinding_reads_nothing(self):
         port = self.port

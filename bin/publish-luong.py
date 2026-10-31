@@ -4,7 +4,7 @@
 Nguồn sơ đồ nằm trong git ở docs/luong/<slug>.json, đi cùng code của phòng; HTML để xem chỉ ở <repo>/.archify/luong-app/.
 
   publish-luong.py --check KEY WORKTREE   lúc phòng xin gộp: phòng đổi mảng nào mà chưa cập nhật sơ đồ của mảng đó?
-  publish-luong.py KEY WORKTREE           lúc phòng gộp xong, TRƯỚC khi xoá worktree: chép sơ đồ, dựng lại mục lục
+  publish-luong.py KEY WORKTREE           lúc phòng gộp xong, TRƯỚC khi xoá worktree: chép sơ đồ lệch với main, dựng lại mục lục
   publish-luong.py --index-only           chỉ dựng lại mục lục
 """
 import argparse
@@ -34,6 +34,7 @@ AREA_DIAGRAMS = {
 }
 AREA_PATH = re.compile(r'^(?:server/src/main/java/com/sportshub/([a-z]+)/|web/src/features/([a-z]+)/|docs/features/([a-z-]+)\.md$)')
 NOT_BEHAVIOUR = re.compile(r'(\.test\.[a-z]+$|/testing/|/locales/)')
+ROUTES = 'web/src/app/router.tsx'
 
 
 class UserError(Exception):
@@ -55,50 +56,99 @@ def needed_diagrams(files):
     return needed
 
 
-def rendered_problem(worktree, slug):
-    """HTML của phòng phải sinh từ đúng nguồn đang có: git tự gộp hai phòng không xung đột thì HTML vẫn là bản trước gộp."""
-    folder = worktree / '.archify' / 'luong-app'
-    source = worktree / 'docs' / 'luong' / f'{slug}.json'
+def source_at(worktree, rev, slug):
+    """Nguồn đã vào git; sửa dở trong thư mục làm việc không tính."""
+    done = subprocess.run(['git', '-C', str(worktree), 'show', f'{rev}:docs/luong/{slug}.json'], capture_output=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def recorded_sha(receipt, part):
+    value = receipt.get(part)
+    return value.get('sha256') if isinstance(value, dict) else None
+
+
+def read_receipt(path):
     try:
-        json.loads(source.read_text(encoding='utf-8'))
+        receipt = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
+        return {}
+    return receipt if isinstance(receipt, dict) else {}
+
+
+def last_render(folder, slug):
+    """Lần sinh HTML gần nhất. `deliver` chạy lại sau finalize thì đổi HTML và biên nhận delivery, không đổi biên nhận finalize."""
+    return read_receipt(folder / f'{slug}.delivery.json') or read_receipt(folder / f'{slug}.finalize.json')
+
+
+def page_matches_receipt(folder, slug):
+    try:
+        page = (folder / f'{slug}.html').read_bytes()
+    except OSError:
+        return False
+    return recorded_sha(last_render(folder, slug), 'artifact') == hashlib.sha256(page).hexdigest()
+
+
+def rendered_problem(folder, slug, source):
+    """HTML phải do một lần finalize ĐẠT sinh từ đúng nguồn này. finalize trượt vẫn ghi biên nhận mang sha nguồn mới và để nguyên HTML cũ."""
+    try:
+        json.loads(source)
+    except (TypeError, ValueError):
         return 'thiếu file nguồn hoặc JSON hỏng'
-    try:
-        receipt = json.loads((folder / f'{slug}.finalize.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    if not (folder / f'{slug}.finalize.json').exists() or not (folder / f'{slug}.html').exists():
         return 'chưa finalize'
-    if not (folder / f'{slug}.html').exists():
-        return 'chưa finalize'
-    if receipt.get('specification', {}).get('sha256') != hashlib.sha256(source.read_bytes()).hexdigest():
+    receipt = read_receipt(folder / f'{slug}.finalize.json')
+    if receipt.get('ok') is not True:
+        return 'finalize chưa đạt; xoá <slug>.browser-check.json rồi finalize lại, không dùng --out-dir'
+    if recorded_sha(last_render(folder, slug), 'specification') != hashlib.sha256(source).hexdigest():
         return 'HTML cũ hơn nguồn, finalize lại'
+    if not page_matches_receipt(folder, slug):
+        return 'HTML bị sửa sau finalize, finalize lại'
     return None
 
 
-def on_room_branch(worktree):
-    return git(worktree, 'rev-parse', 'HEAD') != git(worktree, 'rev-parse', 'main')
+def already_in_main(worktree):
+    done = subprocess.run(['git', '-C', str(worktree), 'merge-base', '--is-ancestor', 'HEAD', 'main'], capture_output=True, text=True)
+    if done.returncode not in (0, 1):
+        raise subprocess.CalledProcessError(done.returncode, done.args, stderr=done.stderr)
+    return done.returncode == 0
+
+
+def same_repo(worktree):
+    common = git(worktree, 'rev-parse', '--git-common-dir').strip()
+    top = git(worktree, 'rev-parse', '--show-toplevel').strip()
+    return Path(top).resolve() == worktree.resolve() and (worktree / common).resolve() == (REPO / '.git').resolve()
 
 
 def check(key, worktree):
     """Máy chỉ biết mảng nào bị đụng, không biết luồng có đổi thật không ⇒ Techlead vẽ, hoặc ghi lý do một dòng ở KHONG-DOI.md."""
-    if not on_room_branch(worktree):
+    if already_in_main(worktree):
         print('WORKTREE phải là nhánh của phòng và chưa gộp; diff rỗng thì không kiểm được gì.')
         return 2
     # --no-renames: chuyển file sang mảng khác thì mảng cũ cũng bị tính là đổi
     files = git(worktree, 'diff', '--no-renames', '--name-only', 'main...HEAD').split()
     room = worktree / '.scratch' / key.lower() / 'luong'
-    drawn = {Path(name).stem for name in files if re.fullmatch(r'docs/luong/[^/]+\.json', name) and (worktree / name).exists()}
+    drawn = {}
+    for name in files:
+        if re.fullmatch(r'docs/luong/[^/]+\.json', name) and (source := source_at(worktree, 'HEAD', Path(name).stem)) is not None:
+            drawn[Path(name).stem] = source
+    folder = worktree / '.archify' / 'luong-app'
     try:
-        waived = {line.split(':', 1)[0].strip() for line in (room / 'KHONG-DOI.md').read_text(encoding='utf-8').splitlines() if ':' in line}
+        waiver = (room / 'KHONG-DOI.md').read_text(encoding='utf-8').splitlines()
     except OSError:
-        waived = set()
-    problems = [f'- {slug}: {problem}' for slug in sorted(drawn) if (problem := rendered_problem(worktree, slug))]
+        waiver = []
+    waived = {line.split(':', 1)[0].strip() for line in waiver if ':' in line and line.split(':', 1)[1].strip()}
+    problems = [f'- {slug}: tên phải dạng NN-ten-luong' for slug in sorted(drawn) if not SLUG.match(slug)]
+    problems += [f'- {slug}: {problem}' for slug, source in sorted(drawn.items()) if SLUG.match(slug) and (problem := rendered_problem(folder, slug, source))]
     for slug, names in sorted(needed_diagrams(files).items()):
-        if slug not in drawn | waived:
+        if slug not in drawn.keys() | waived:
             problems.append(f'- {slug}: đổi {", ".join(names[:3])}' + (f' và {len(names) - 3} file khác' if len(names) > 3 else ''))
+    # Đổi route là đổi bước đi nhưng file này không thuộc mảng nào, nên đòi một sơ đồ đã sửa hoặc dòng "router: lý do"
+    if ROUTES in files and not drawn and 'router' not in waived:
+        problems.append(f'- router: đổi {ROUTES}, chưa sửa sơ đồ nào')
     if not problems:
         print('Sơ đồ luồng: đủ.')
         return 0
-    print('THIẾU sơ đồ luồng. Sửa docs/luong/<slug>.json rồi finalize, hoặc ghi "<slug>: lý do" vào .scratch/<key>/luong/KHONG-DOI.md nếu bước đi không đổi:')
+    print('THIẾU sơ đồ luồng. Sửa docs/luong/<slug>.json, commit rồi finalize, hoặc ghi "<slug>: lý do" vào .scratch/<key>/luong/KHONG-DOI.md nếu bước đi không đổi:')
     print('\n'.join(problems))
     return 1
 
@@ -117,26 +167,53 @@ def load_sources() -> dict:
         return {}
 
 
-def publish(key: str, worktree: Path) -> list[str]:
-    """Kiểm hết rồi mới chép: sai một sơ đồ thì không chép sơ đồ nào."""
+def publish(key: str, worktree: Path) -> tuple[list[str], list[str]]:
+    """Đích luôn theo main. Mỗi sơ đồ trên main: bản đang xem đúng rồi thì thôi; không thì lấy từ phòng này hoặc từ HTML đã
+    finalize sẵn ở đích, miễn sinh từ đúng nguồn main. Phòng dọn muộn vì thế không ghi đè được sơ đồ mới hơn của phòng gộp sau.
+    candidate.json ghi sau cùng: chép dở thì lần sau vẫn thấy lệch và chép lại. Sơ đồ chưa đúng được thì trả về để báo."""
     if worktree.resolve() == REPO.resolve():
         raise UserError('WORKTREE phải là thư mục của phòng, không phải repo gốc.')
+    if not same_repo(worktree):
+        raise UserError('CHƯA CHÉP GÌ. WORKTREE phải là gốc worktree của repo SportsHub.')
+    if not already_in_main(worktree):
+        raise UserError('CHƯA CHÉP GÌ. Phòng chưa gộp vào main.')
     folder = worktree / '.archify' / 'luong-app'
-    slugs = sorted(page.stem for page in folder.glob('*.html') if SLUG.match(page.stem))
-    problems = [f'{slug}: {problem}' for slug in slugs if (problem := rendered_problem(worktree, slug))]
-    if problems:
-        raise UserError('CHƯA CHÉP GÌ. ' + '; '.join(problems))
+    listed = git(worktree, 'ls-tree', '--full-tree', '--name-only', 'main', 'docs/luong/').split()
+    on_main = sorted(Path(name).stem for name in listed if name.endswith('.json') and SLUG.match(Path(name).stem))
+    if not on_main:   # nhánh xoá bên dưới sẽ xoá sạch thư mục xem
+        raise UserError('CHƯA CHÉP GÌ. Không thấy sơ đồ nào trên main.')
     sources = load_sources()
     today = dt.date.today().isoformat()
     commit = git(worktree, 'rev-parse', '--short', 'HEAD').strip()
-    for slug in slugs:
-        (DEST / slug).mkdir(parents=True, exist_ok=True)
-        shutil.copy2(worktree / 'docs' / 'luong' / f'{slug}.json', DEST / slug / 'candidate.json')
-        for extra in folder.glob(f'{slug}.*'):
-            shutil.copy2(extra, DEST / extra.name)
-        sources[slug] = {'room': key, 'date': today, 'commit': commit}
+    copied, left = [], []
+    DEST.mkdir(parents=True, exist_ok=True)
+    for slug in on_main:
+        source = source_at(worktree, 'main', slug)
+        shown = DEST / slug / 'candidate.json'
+        if shown.exists() and shown.read_bytes() == source and page_matches_receipt(DEST, slug):
+            continue
+        shown.parent.mkdir(parents=True, exist_ok=True)
+        if not rendered_problem(worktree / '.archify' / 'luong-app', slug, source):
+            for extra in folder.glob(f'{slug}.*'):
+                shutil.copy2(extra, DEST / extra.name)
+            sources[slug] = {'room': key, 'date': today, 'commit': commit}
+        elif problem := rendered_problem(DEST, slug, source):
+            left.append(f'{slug}: {problem}')
+            continue
+        else:
+            sources[slug] = {'room': 'vẽ ở repo gốc', 'date': today, 'commit': git(worktree, 'rev-parse', '--short', 'main').strip()}
+        shown.write_bytes(source)
         SOURCES.write_text(json.dumps(sources, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    return slugs
+        copied.append(slug)
+    # Sơ đồ bị xoá hay đổi tên trên main không còn là thứ app có
+    for page in DEST.glob('*.html'):
+        if SLUG.match(page.stem) and page.stem not in on_main:
+            for extra in DEST.glob(f'{page.stem}.*'):
+                extra.unlink()
+            shutil.rmtree(DEST / page.stem, ignore_errors=True)
+            sources.pop(page.stem, None)
+    SOURCES.write_text(json.dumps(sources, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    return copied, left
 
 
 def build_index() -> int:
@@ -184,17 +261,29 @@ def main() -> None:
     if args.check:
         if not (args.key and args.worktree):
             parser.error('--check cần KEY và WORKTREE')
-        sys.exit(check(args.key, Path(args.worktree)))
+        try:
+            sys.exit(check(args.key, Path(args.worktree)))
+        except subprocess.CalledProcessError as exc:
+            print(f'Không đọc được git của worktree: {exc.stderr}', file=sys.stderr)
+            sys.exit(2)
+    left = []
     if not args.index_only:
         if not (args.key and args.worktree):
             parser.error('cần KEY và WORKTREE, hoặc --index-only')
         try:
-            done = publish(args.key, Path(args.worktree))
+            done, left = publish(args.key, Path(args.worktree))
         except UserError as exc:
             print(exc, file=sys.stderr)
             sys.exit(1)
-        print(f"chép {len(done)} sơ đồ: {', '.join(done) or 'phòng không đổi sơ đồ nào'}")
+        except (subprocess.CalledProcessError, OSError) as exc:
+            print(f'CHƯA XONG, chạy lại sau khi xử lý lỗi: {getattr(exc, "stderr", None) or exc}', file=sys.stderr)
+            sys.exit(1)
+        if done or not left:
+            print(f"chép {len(done)} sơ đồ: {', '.join(done) or 'bản đang xem đã đúng với main'}")
     print(f'mục lục: {build_index()} luồng → {DEST / "index.html"}')
+    if left:
+        print('CHƯA ĐÚNG. Finalize từng sơ đồ này ở repo gốc (đang ở main) rồi chạy lại:\n- ' + '\n- '.join(left), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

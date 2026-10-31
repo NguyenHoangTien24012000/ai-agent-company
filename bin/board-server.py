@@ -4,7 +4,6 @@
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import mimetypes
 import os
 import re
 from pathlib import Path
@@ -22,8 +21,11 @@ REPO_ROOT = '/Users/tien/Claude/sportshub'
 WORKTREES_ROOT = '/Users/tien/orca/workspaces/sportshub'
 # Chỉ loại file Sếp cần xem trên board; bí mật (.env, *.key, *.pem) không có đuôi nào ở đây.
 # JSON không có: file QA có thể chứa thẻ đăng nhập.
-VIEWABLE = {'.html', '.htm', '.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf', '.md', '.txt', '.log'}
-PLAIN_TEXT = {'.md', '.txt', '.log'}
+# Kiểu lấy từ đúng đuôi quyết định sandbox bên dưới. Không dùng mimetypes.guess_type với tên file: Python mới đọc tên như
+# URL, `ab:x.html#.png` ra text/html trong khi đuôi là .png, trang chạy không sandbox ngay trên origin của board.
+VIEWABLE = {'.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript',
+            '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+            '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.md': 'text/plain', '.txt': 'text/plain', '.log': 'text/plain'}
 RUNS_SCRIPT = {'.html', '.htm', '.svg'}
 # Áp cho mọi đường mở (cửa sổ xem, "Mở tab riêng", chuột giữa): không có allow-same-origin nên script của trang không
 # đọc được /api/state, không gửi được /api/answer. Câu trả lời giả sẽ bị gõ thẳng vào terminal Manager.
@@ -133,8 +135,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self.send_json(404, {'ok': False, 'error': 'Không tìm thấy file.'})
                 return
             suffix = target.suffix.lower()
-            kind = 'text/plain' if suffix in PLAIN_TEXT else mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
-            charset = '; charset=utf-8' if kind.startswith('text/') or kind in ('application/json', 'text/javascript') else ''
+            kind = VIEWABLE[suffix]
+            charset = '; charset=utf-8' if kind.startswith('text/') else ''
             try:
                 payload = target.read_bytes()
             except OSError:

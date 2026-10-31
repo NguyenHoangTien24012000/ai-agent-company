@@ -54,7 +54,8 @@ Nguồn nằm trong git: `docs/luong/<slug>.json`, đi cùng code của phòng; 
    `meta.output` luôn là `.archify/luong-app/<slug>.html` (git bỏ qua). File nguồn luôn đầy đủ, không tách bản gốc/bản dịch.
 3. `finalize` ra đúng `meta.output` trong worktree. Nhãn tiếng Việt có dấu; sự thật lấy từ thiết kế đã chốt + code thật, không bịa.
 4. Liệt kê ở mục "Sơ đồ luồng" của `techlead.md`. Báo Manager commit file nguồn cùng nhánh. Sau MỖI lần rebase có đổi file nguồn
-   (kể cả git tự gộp, không xung đột) ⇒ finalize lại: máy so HTML với nguồn, lệch là không cho gộp.
+   (kể cả git tự gộp, không xung đột) ⇒ `rm -f .archify/luong-app/<slug>.browser-check.json` rồi finalize lại, không dùng
+   `--out-dir` (biên nhận ở thư mục khác thì máy không thấy): máy so HTML với nguồn, lệch là không cho gộp.
 5. Thư ký chạy máy kiểm khi phòng xin gộp: đổi code một mảng (server, web, hồ sơ tính năng) mà sơ đồ mảng đó không đổi ⇒ trả về.
    Bước đi thật sự không đổi (chỉ chữ, chỉ giao diện) ⇒ ghi `<slug>: lý do` vào `.scratch/<key>/luong/KHONG-DOI.md`, không vẽ.
 
