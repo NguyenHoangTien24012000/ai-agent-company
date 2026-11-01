@@ -324,6 +324,7 @@ git mv …/V12__x.sql …/V13__x.sql     # trùng số ⇒ đổi sang số kế
 (cd server && ./mvnw -q clean)      # sau MỌI lần đổi số: target/classes còn bản cũ ⇒ Flyway "more than one migration with version N"
 make check > $R/check-$(git rev-parse --short HEAD).log 2>&1   # MỘT lần; số trình Sếp lấy từ log này
 C room set $KEY --step cho-gop      # Thư ký thức, chạy lại make check, ghi evidence
+# Trước đó: xoá trang lab của tính năng đã vào bản thật (trang, route, chữ `lab-*`); còn giữ để soi ⇒ nêu lý do trong ask cổng 6 (Sếp chốt 31/10)
 ```
 
 Trước khi trình: `gh run list --branch main --limit 1` ⇒ ghi trạng thái CI của main vào context (xanh/đỏ + link). Main đỏ
@@ -357,7 +358,7 @@ ghi vào `.scratch/<key>/retro.md` và `company.py note <KEY> "retro: …"` đ�
 Trên nhánh `phong/<key>`: commit tự do, không cần xin (spec Q15) — vẫn sau `make check` hoặc phần test liên quan xanh.
 Gộp `main` và push LUÔN cần cổng 6. Lane trong worktree không commit được ⇒ Manager `git add <đúng danh sách file lane báo>`,
 không bao giờ `git add -A`/`git add .`. Message theo mục "Viết message" trong `CLAUDE.md`, kèm dòng `Co-Authored-By`.
-Bảng "KHÔNG BAO GIỜ commit" trong `CLAUDE.md` vẫn áp: `git diff --cached --name-only | grep -E "target/|\.log$|node_modules|\.env"` phải trống.
+Hồ sơ `.scratch/` không vào git (Sếp chốt 31/10), không dùng `git add -f`; thứ cần giữ lâu ghi vào `docs/features/` hoặc ADR. Bảng "KHÔNG BAO GIỜ commit" trong `CLAUDE.md` vẫn áp: `git diff --cached --name-only | grep -E "target/|\.log$|node_modules|\.env"` phải trống.
 
 ## 13. Kiểm chứng — một lần, trên bản cuối
 
